@@ -19,6 +19,8 @@ private slots:
     void garbageCompareIsZero();
     void missingBuildMetadata();
     void numericVsAlphabetic();
+    void rejectsInvalidSemVer();
+    void comparesLargeNumericIdentifiers();
 };
 
 void TestSemver::parseStableBeatsRc() {
@@ -56,6 +58,20 @@ void TestSemver::numericVsAlphabetic() {
     QVERIFY(compareVersions("1.0.0-alpha.beta", "1.0.0-alpha.1") > 0);
     // 数字与数字按大小比
     QVERIFY(compareVersions("1.0.0-alpha.10", "1.0.0-alpha.2") > 0);
+}
+
+void TestSemver::rejectsInvalidSemVer() {
+    QCOMPARE(compareVersions("01.0.0", "1.0.0"), 0);
+    QCOMPARE(compareVersions("1.0.0-alpha..1", "1.0.0"), 0);
+    QCOMPARE(compareVersions("1.0.0-alpha.01", "1.0.0-alpha.1"), 0);
+    QCOMPARE(compareVersions("1.0.0+build..1", "1.0.0"), 0);
+}
+
+void TestSemver::comparesLargeNumericIdentifiers() {
+    QVERIFY(compareVersions("999999999999999999999.0.0",
+                            "999999999999999999998.0.0") > 0);
+    QVERIFY(compareVersions("1.0.0-alpha.999999999999999999999",
+                            "1.0.0-alpha.2") > 0);
 }
 
 QTEST_GUILESS_MAIN(TestSemver)

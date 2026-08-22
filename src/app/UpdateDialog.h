@@ -21,6 +21,7 @@ class UpdateDialog : public QDialog {
     Q_OBJECT
 public:
     explicit UpdateDialog(dsh::updater::Status status, QWidget* parent = nullptr);
+    void reject() override;
 
 private slots:
     void onUpdate();
@@ -31,6 +32,7 @@ private:
     dsh::updater::Status status_;
     QTextEdit* log_{nullptr};
     QPushButton* updateButton_{nullptr};
+    bool updateInProgress_{false};
 };
 
 }  // namespace dsh::app

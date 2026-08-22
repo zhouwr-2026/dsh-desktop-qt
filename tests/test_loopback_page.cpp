@@ -22,6 +22,7 @@ private slots:
     void builtInSchemesAreInternal();
     void httpUrlsDistinguished();
     void configuredRemoteOriginIsInternal();
+    void localOriginCannotNavigateOtherLoopback();
     void remoteOriginCannotNavigateToLoopback();
     void clipboardOriginMustMatchApplication();
     void backendUsesExplicitUrl();
@@ -43,10 +44,15 @@ void TestLoopback::externalHostsAreExternal() {
 }
 
 void TestLoopback::builtInSchemesAreInternal() {
-    QVERIFY(dsh::web::LoopbackWebPage::isInternal(QUrl("data:text/plain,hello")));
     QVERIFY(dsh::web::LoopbackWebPage::isInternal(QUrl("about:blank")));
-    QVERIFY(dsh::web::LoopbackWebPage::isInternal(QUrl("mailto:foo@bar.com")));
-    QVERIFY(dsh::web::LoopbackWebPage::isInternal(QUrl("tel:+86-138-0000-0000")));
+    QVERIFY(dsh::web::LoopbackWebPage::isInternal(QUrl("blob:http://127.0.0.1/id")));
+    QVERIFY(!dsh::web::LoopbackWebPage::isInternal(
+        QUrl("blob:https://evil.example/id"), QUrl("http://127.0.0.1:3080")));
+    QVERIFY(!dsh::web::LoopbackWebPage::isInternal(QUrl("data:text/plain,hello")));
+    QVERIFY(!dsh::web::LoopbackWebPage::isInternal(QUrl("file:///etc/passwd")));
+    QVERIFY(!dsh::web::LoopbackWebPage::isInternal(QUrl("javascript:alert(1)")));
+    QVERIFY(!dsh::web::LoopbackWebPage::isInternal(QUrl("mailto:foo@bar.com")));
+    QVERIFY(!dsh::web::LoopbackWebPage::isInternal(QUrl("tel:+86-138-0000-0000")));
 }
 
 void TestLoopback::httpUrlsDistinguished() {
@@ -63,6 +69,14 @@ void TestLoopback::configuredRemoteOriginIsInternal() {
         QUrl("https://dsh.example.com/session/1"), applicationUrl));
     QVERIFY(!dsh::web::LoopbackWebPage::isInternal(
         QUrl("http://dsh.example.com:8443/session/1"), applicationUrl));
+}
+
+void TestLoopback::localOriginCannotNavigateOtherLoopback() {
+    const QUrl applicationUrl("http://127.0.0.1:3080/app");
+    QVERIFY(!dsh::web::LoopbackWebPage::isInternal(
+        QUrl("http://127.0.0.1:9090/admin"), applicationUrl));
+    QVERIFY(!dsh::web::LoopbackWebPage::isInternal(
+        QUrl("http://localhost:3080/"), applicationUrl));
 }
 
 void TestLoopback::remoteOriginCannotNavigateToLoopback() {

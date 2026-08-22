@@ -7,6 +7,7 @@
 #include "ExitDialog.h"
 #include "UpdateDialog.h"
 
+#include <QAbstractSocket>
 #include <QAction>
 #include <QApplication>
 #include <QEventLoop>
@@ -31,6 +32,7 @@
 #include <QDBusConnection>
 #include <QDBusInterface>
 #include <QDir>
+#include <QFile>
 #include <QFileInfo>
 #include <QLocalServer>
 #include <QLocalSocket>
@@ -45,58 +47,44 @@ namespace {
 // 在 offscreen / CI 模式下 ``QSystemTrayIcon::isSystemTrayAvailable()``
 // 会阻塞等 D-Bus 应答，所以先嗅探 KDE StatusNotifierWatcher 服务。
 //
-// 在远程 xrdp / VNC 等场景下，KDE Plasma 跑在 root user 的会话里，
-// arch user 启动 dsh-desktop 时连不上自己的 D-Bus。常见回退路径：
-//   1. ``DBUS_SESSION_BUS_ADDRESS`` 环境变量（手动设）
-//   2. ``$XDG_RUNTIME_DIR/bus``（正常 KDE 登录会话）
-//   3. ``/run/user/<uid>/bus``（其他用户）
-//   4. ``/run/user/0/bus``（root 用户的 KDE session，xrdp 常见）
-//   5. 默认 ``QDBusConnection::sessionBus()``
+// 仅探测显式会话地址和当前用户的 XDG runtime bus，不跨用户猜测。
 
 /// 在多个常见路径里探测一个能连上 KDE StatusNotifierWatcher 的 D-Bus session。
 /// 命中后会把 ``DBUS_SESSION_BUS_ADDRESS`` 设到该地址，所以
 /// 后续 ``QDBusConnection::sessionBus()`` 也会连同一个。
 QDBusConnection connectToKdeSessionBus() {
-    // offscreen 平台不连真实 D-Bus
     if (qEnvironmentVariable("QT_QPA_PLATFORM") == "offscreen") {
         return QDBusConnection::sessionBus();
     }
 
+    const QByteArray originalAddress = qgetenv("DBUS_SESSION_BUS_ADDRESS");
     QStringList candidates;
-    const QByteArray env = qgetenv("DBUS_SESSION_BUS_ADDRESS");
-    if (!env.isEmpty()) candidates << QString::fromLocal8Bit(env);
+    if (!originalAddress.isEmpty()) candidates << QString::fromLocal8Bit(originalAddress);
 
     const QString runtime = QStandardPaths::writableLocation(
                                 QStandardPaths::RuntimeLocation);
-    if (!runtime.isEmpty()) candidates << runtime + "/bus";
+    if (!runtime.isEmpty()) candidates << runtime + QStringLiteral("/bus");
+    candidates.removeDuplicates();
 
-    for (const QString base : {
-             "/run/user/0",        // root 用户的 KDE session（xrdp 常见）
-             "/run/user/1000",     // UID 1000 用户的 D-Bus
-             "/run/user/1001",
-         }) {
-        candidates << base + "/bus";
-    }
-
-    for (const QString& addr : candidates) {
-        // 临时切 env 让 Qt 走这个地址
-        qputenv("DBUS_SESSION_BUS_ADDRESS", addr.toLocal8Bit());
-        QDBusConnection c = QDBusConnection::sessionBus();
-        if (c.isConnected()) {
-            // 验证是否真的有 KDE watcher
+    for (int index = 0; index < candidates.size(); ++index) {
+        QString address = candidates.at(index);
+        if (address.startsWith('/')) address.prepend(QStringLiteral("unix:path="));
+        const QString connectionName = QStringLiteral("dsh-kde-session-%1").arg(index);
+        QDBusConnection connection = QDBusConnection::connectToBus(address, connectionName);
+        if (connection.isConnected()) {
             QDBusInterface iface("org.kde.StatusNotifierWatcher",
                                   "/StatusNotifierWatcher",
-                                  "org.kde.StatusNotifierWatcher", c);
+                                  "org.kde.StatusNotifierWatcher", connection);
             if (iface.isValid()) {
-                // 命中：env 保持新值，让后续调用也走这条线
-                return c;
+                qputenv("DBUS_SESSION_BUS_ADDRESS", address.toLocal8Bit());
+                return connection;
             }
         }
+        QDBusConnection::disconnectFromBus(connectionName);
     }
 
-    // 全失败：恢复 env 并返回默认（很可能是 disconnected）
-    if (env.isEmpty()) qunsetenv("DBUS_SESSION_BUS_ADDRESS");
-    else qputenv("DBUS_SESSION_BUS_ADDRESS", env);
+    if (originalAddress.isEmpty()) qunsetenv("DBUS_SESSION_BUS_ADDRESS");
+    else qputenv("DBUS_SESSION_BUS_ADDRESS", originalAddress);
     return QDBusConnection::sessionBus();
 }
 
@@ -247,10 +235,14 @@ int DshDesktopApp::run() {
             return 0;
         }
         probe.abort();
-        // 没人在听——清理残留 socket 文件（上次异常退出）然后建立监听
-        QLocalServer::removeServer(sockPath);
+        // 连接失败后先尝试监听；只有地址确认为残留时，才删除并重试一次。
         singleInstanceServer_ = new QLocalServer(this);
-        if (singleInstanceServer_->listen(sockPath)) {
+        singleInstanceServer_->setSocketOptions(QLocalServer::UserAccessOption);
+        if (!singleInstanceServer_->listen(sockPath)
+            && singleInstanceServer_->serverError() == QAbstractSocket::AddressInUseError) {
+            QLocalServer::removeServer(sockPath);
+        }
+        if (singleInstanceServer_->isListening() || singleInstanceServer_->listen(sockPath)) {
             connect(singleInstanceServer_, &QLocalServer::newConnection,
                     this, &DshDesktopApp::onSecondInstance);
             logger_.log(QStringLiteral("单实例锁已建立：%1").arg(sockPath));
@@ -554,10 +546,16 @@ void DshDesktopApp::performQuit(bool stopBackground) {
 }
 
 QString DshDesktopApp::singleInstanceSocketPath() {
-    const QString runtime = QStandardPaths::writableLocation(
-                                QStandardPaths::RuntimeLocation);
-    const QString dir = runtime.isEmpty() ? QStringLiteral("/tmp") : runtime;
-    return dir + QStringLiteral("/dsh-desktop.sock");
+    QString runtime = QStandardPaths::writableLocation(
+                          QStandardPaths::RuntimeLocation);
+    if (runtime.isEmpty()) {
+        runtime = QStandardPaths::writableLocation(QStandardPaths::CacheLocation)
+            + QStringLiteral("/runtime");
+        QDir().mkpath(runtime);
+        QFile::setPermissions(runtime, QFileDevice::ReadOwner | QFileDevice::WriteOwner
+                                      | QFileDevice::ExeOwner);
+    }
+    return runtime + QStringLiteral("/dsh-desktop.sock");
 }
 
 void DshDesktopApp::onSecondInstance() {

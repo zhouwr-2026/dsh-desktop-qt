@@ -11,9 +11,9 @@ license=('MIT')
 depends=(
     'qt6-base'
     'qt6-webengine'
+    'qt6-svg'
     'libxcb'
     'knotifications'
-    'dsh'           # @deepseek-ai/dsh 通过 npm 安装
     'npm'
     'polkit'
     'procps-ng'

@@ -2,14 +2,13 @@
 // @author zhouwr
 #include "SupervisedBackend.h"
 
-#include <QDateTime>
 #include <QDir>
 #include <QFile>
 #include <QStandardPaths>
-#include <QThread>
 #include <QUrl>
 
 #include <signal.h>
+#include <unistd.h>
 
 namespace dsh::backend {
 
@@ -87,6 +86,9 @@ bool SupervisedBackend::start() {
     auto* p = new QProcess(this);
     p->setProgram(dshBin_);
     p->setArguments({"web", "--host", host, "--port", port});
+    p->setChildProcessModifier([]() {
+        if (::setsid() == -1) ::_exit(127);
+    });
     QProcessEnvironment env = QProcessEnvironment::systemEnvironment();
     if (env.value("DSH_HOME").isEmpty()) {
         env.insert("DSH_HOME", QDir::homePath() + QStringLiteral("/.dsh"));
@@ -94,47 +96,42 @@ bool SupervisedBackend::start() {
     p->setProcessEnvironment(env);
     p->setProcessChannelMode(QProcess::MergedChannels);
     proc_ = p;
-    connect(p, &QProcess::readyReadStandardOutput, this, [this]() {
+    connect(p, &QProcess::readyReadStandardOutput, this, [this, p]() {
         emit log(QStringLiteral("dsh web: %1")
-                     .arg(QString::fromLocal8Bit(proc_->readAllStandardOutput()).trimmed()));
+                     .arg(QString::fromLocal8Bit(p->readAllStandardOutput()).trimmed()));
     });
     connect(p, QOverload<int, QProcess::ExitStatus>::of(&QProcess::finished),
-            this, [this](int code, QProcess::ExitStatus st) {
+            this, [this, p](int code, QProcess::ExitStatus st) {
         emit log(QStringLiteral("supervised: dsh web 退出 code=%1 状态=%2")
                      .arg(code).arg(static_cast<int>(st)));
+        if (proc_ == p) proc_ = nullptr;
+        p->deleteLater();
     });
     p->start();
     if (!p->waitForStarted(5000)) {
         emit log(QStringLiteral("supervised: 启动失败 (%1)").arg(p->errorString()));
+        if (proc_ == p) proc_ = nullptr;
+        p->deleteLater();
         return false;
     }
-    // 等待 HTTP 可达，最多 15 秒
-    const qint64 deadline = QDateTime::currentMSecsSinceEpoch() + 15000;
-    while (QDateTime::currentMSecsSinceEpoch() < deadline) {
-        if (p->state() == QProcess::NotRunning) {
-            emit log("supervised: 子进程提前退出");
-            return false;
-        }
-        if (isRunning()) return true;
-        QThread::msleep(250);
-    }
-    emit log("supervised: 15 秒内未就绪");
-    return false;
+    emit log(QStringLiteral("supervised: dsh web 已启动，等待页面健康检查确认就绪"));
+    return true;
 }
 
 bool SupervisedBackend::stop(bool force) {
-    if (!proc_ || proc_->state() == QProcess::NotRunning) return true;
-    const qint64 pid = proc_->processId();
-    if (pid <= 0) return true;
-    // SIGTERM 整个进程组（start_new_session=true 时成立）
-    ::kill(static_cast<pid_t>(pid), force ? SIGKILL : SIGTERM);
-    if (!proc_->waitForFinished(force ? 3000 : 8000)) {
-        if (!force) {
-            emit log("supervised: 优雅退出超时，升级为 SIGKILL");
-            return stop(true);
-        }
+    QProcess* process = proc_;
+    if (!process || process->state() == QProcess::NotRunning) return true;
+    const qint64 pid = process->processId();
+    if (pid <= 0) return false;
+
+    const pid_t processGroup = -static_cast<pid_t>(pid);
+    ::kill(processGroup, force ? SIGKILL : SIGTERM);
+    if (!process->waitForFinished(force ? 3000 : 8000) && !force) {
+        emit log("supervised: 优雅退出超时，升级为 SIGKILL");
+        ::kill(processGroup, SIGKILL);
+        process->waitForFinished(3000);
     }
-    return true;
+    return process->state() == QProcess::NotRunning;
 }
 
 bool SupervisedBackend::restart() {

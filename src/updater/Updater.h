@@ -26,6 +26,8 @@ class Updater : public QObject {
 public:
     explicit Updater(QObject* parent = nullptr);
 
+    void setTargetVersion(const QString& version) { targetVersion_ = version; }
+
     /// 读取本地 dsh CLI 版本（例如 ``0.1.0-rc.7``）。
     static QString readLocalVersion();
 
@@ -35,9 +37,8 @@ public:
     /// 综合本地版本与 npm 版本，按严格 SemVer 比较。
     static Status check(int timeoutSeconds = 8);
 
-    /// 执行 ``pkexec npm install -g @deepseek-ai/dsh@latest``，
-    /// 输出逐行通过 ``log`` 信号转发。返回 ``(ok, 摘要)``。
-    bool performUpdate(const QString& label = QStringLiteral("update"));
+    /// 使用检查时确认的明确版本执行提权更新，避免 ``latest`` 在确认后漂移。
+    bool performUpdate();
 
 public slots:
     void performUpdateAsync();
@@ -47,7 +48,7 @@ signals:
     void updateFinished(bool ok);
 
 private:
-    QString label_;
+    QString targetVersion_;
 };
 
 /// 严格 SemVer 2.0 比较（暴露给单元测试使用）。

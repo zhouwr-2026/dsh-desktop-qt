@@ -18,13 +18,15 @@ UpdateDialog::UpdateDialog(dsh::updater::Status status, QWidget* parent)
 
     auto* layout = new QVBoxLayout(this);
 
-    auto* cur = new QLabel(tr("当前版本：<b>%1</b>")
-                               .arg(status_.current.isEmpty() ? tr("未知") : status_.current));
+    const QString currentVersion = status_.current.isEmpty()
+        ? tr("未知") : status_.current.toHtmlEscaped();
+    auto* cur = new QLabel(tr("当前版本：<b>%1</b>").arg(currentVersion));
     cur->setTextFormat(Qt::RichText);
     layout->addWidget(cur);
 
-    auto* lat = new QLabel(tr("最新版本：<b>%1</b>")
-                               .arg(status_.latest.isEmpty() ? tr("未知") : status_.latest));
+    const QString latestVersion = status_.latest.isEmpty()
+        ? tr("未知") : status_.latest.toHtmlEscaped();
+    auto* lat = new QLabel(tr("最新版本：<b>%1</b>").arg(latestVersion));
     lat->setTextFormat(Qt::RichText);
     layout->addWidget(lat);
 
@@ -56,12 +58,14 @@ UpdateDialog::UpdateDialog(dsh::updater::Status status, QWidget* parent)
 }
 
 void UpdateDialog::onUpdate() {
+    updateInProgress_ = true;
     log_->show();
     updateButton_->setEnabled(false);
 
     // 走工作线程，避免阻塞 UI 刷新日志
     auto* thread = new QThread();
     auto* updater = new dsh::updater::Updater();
+    updater->setTargetVersion(status_.latest);
     updater->moveToThread(thread);
     connect(thread, &QThread::started,
             updater, &dsh::updater::Updater::performUpdateAsync);
@@ -82,7 +86,16 @@ void UpdateDialog::onLog(const QString& line) {
 }
 
 void UpdateDialog::onUpdateFinished(bool ok) {
+    updateInProgress_ = false;
     log_->append(ok ? tr("更新完成。") : tr("更新失败，请检查上方日志。"));
+}
+
+void UpdateDialog::reject() {
+    if (updateInProgress_) {
+        log_->append(tr("更新正在进行，完成或超时后才能关闭窗口。"));
+        return;
+    }
+    QDialog::reject();
 }
 
 }  // namespace dsh::app

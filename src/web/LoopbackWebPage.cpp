@@ -46,23 +46,37 @@ LoopbackWebPage::LoopbackWebPage(QWebEngineProfile* profile,
             return;
         }
         const QString scheme = url.scheme().toLower();
-        if ((scheme == "http" || scheme == "https") && opener_) opener_(url);
+        if ((scheme == QStringLiteral("http")
+             || scheme == QStringLiteral("https")
+             || scheme == QStringLiteral("mailto")
+             || scheme == QStringLiteral("tel"))
+            && opener_) {
+            opener_(url);
+        }
     });
 }
 
 bool LoopbackWebPage::isInternal(const QUrl& url, const QUrl& applicationUrl) {
-    // data:, blob:, about:, file:, javascript:, mailto:, tel: stay inside.
+    if (!url.isValid()) return false;
     const QString scheme = url.scheme().toLower();
-    if (scheme == "data" || scheme == "blob" || scheme == "about" ||
-        scheme == "file" || scheme == "javascript" || scheme == "mailto" ||
-        scheme == "tel")
-        return true;
-    if (isSameOrigin(url, applicationUrl)) return true;
-    const bool remoteApplication = applicationUrl.isValid()
-        && !applicationUrl.host().isEmpty()
-        && !isLoopbackHost(applicationUrl.host());
-    if (!remoteApplication && isLoopbackHost(url.host())) return true;
-    return false;
+    if (scheme == QStringLiteral("about")) {
+        return url == QUrl(QStringLiteral("about:blank"));
+    }
+    if (scheme == QStringLiteral("blob")) {
+        const QString encoded = url.toString(QUrl::FullyEncoded);
+        const QUrl originUrl(encoded.mid(QStringLiteral("blob:").size()));
+        if (applicationUrl.isValid() && !applicationUrl.isEmpty()) {
+            return isSameOrigin(originUrl, applicationUrl);
+        }
+        return (originUrl.scheme() == QStringLiteral("http")
+                || originUrl.scheme() == QStringLiteral("https"))
+            && isLoopbackHost(originUrl.host());
+    }
+    if (applicationUrl.isValid() && !applicationUrl.isEmpty()) {
+        return isSameOrigin(url, applicationUrl);
+    }
+    return (scheme == QStringLiteral("http") || scheme == QStringLiteral("https"))
+        && isLoopbackHost(url.host());
 }
 
 bool LoopbackWebPage::acceptNavigationRequest(const QUrl& url,
@@ -71,9 +85,11 @@ bool LoopbackWebPage::acceptNavigationRequest(const QUrl& url,
     Q_UNUSED(type);
     Q_UNUSED(isMainFrame);
     if (isInternal(url, applicationUrl_)) return true;
-    if (url.scheme().toLower() == "http" || url.scheme().toLower() == "https") {
+    const QString scheme = url.scheme().toLower();
+    if (scheme == QStringLiteral("http") || scheme == QStringLiteral("https")
+        || scheme == QStringLiteral("mailto") || scheme == QStringLiteral("tel")) {
         if (opener_) opener_(url);
-        return false;  // block the in-viewport navigation
+        return false;
     }
     return false;  // refuse all other external schemes too (magnet:, etc.)
 }

@@ -13,6 +13,7 @@
 #include <QResource>
 
 #include <cstdlib>
+#include <cstdio>
 #include <memory>
 #include <unistd.h>
 
@@ -33,20 +34,6 @@ int main(int argc, char* argv[]) {
     // GPU 线程会因 GLOzone 初始化失败而 SIGABRT。实体机保留硬件加速。
     dsh::platform::configureRendering();
 
-    // 远程会话 + root 场景：QtWebEngine 进程不能以 root 跑沙箱。
-    // 必须在 QApplication 构造之前设置（Chromium 在初始化时读这些 flag）。
-    if (::geteuid() == 0) {
-        if (qgetenv("QTWEBENGINE_DISABLE_SANDBOX").isEmpty()) {
-            qputenv("QTWEBENGINE_DISABLE_SANDBOX", "1");
-        }
-        QByteArray flags = qgetenv("QTWEBENGINE_CHROMIUM_FLAGS");
-        if (!flags.split(' ').contains(QByteArrayLiteral("--no-sandbox"))) {
-            if (!flags.trimmed().isEmpty()) flags.append(' ');
-            flags.append("--no-sandbox");
-            qputenv("QTWEBENGINE_CHROMIUM_FLAGS", flags);
-        }
-    }
-
     // 无 GUI 的诊断模式必须能够在没有 DISPLAY/WAYLAND_DISPLAY 的机器上运行。
     // --self-test 仍需构造 QApplication，但在无显式平台配置时强制使用 offscreen。
     bool selfTestRequested = false;
@@ -63,6 +50,24 @@ int main(int argc, char* argv[]) {
         guiRequested = true;
         if (qEnvironmentVariableIsEmpty("QT_QPA_PLATFORM")) {
             qputenv("QT_QPA_PLATFORM", "offscreen");
+        }
+    }
+
+    // QtWebEngine 以 root 运行时只能关闭 Chromium 沙箱，这会让任何 Web
+    // 内容漏洞直接获得 root 权限。无 GUI 的诊断模式不受此限制。
+    if (guiRequested && ::geteuid() == 0) {
+        if (qgetenv("DSH_DESKTOP_ALLOW_ROOT") != QByteArrayLiteral("1")) {
+            std::fprintf(stderr,
+                         "dsh-desktop: 拒绝以 root 运行 QtWebEngine。请改用普通用户；"
+                         "确需运行时设置 DSH_DESKTOP_ALLOW_ROOT=1。\n");
+            return 5;
+        }
+        qputenv("QTWEBENGINE_DISABLE_SANDBOX", "1");
+        QByteArray flags = qgetenv("QTWEBENGINE_CHROMIUM_FLAGS");
+        if (!flags.split(' ').contains(QByteArrayLiteral("--no-sandbox"))) {
+            if (!flags.trimmed().isEmpty()) flags.append(' ');
+            flags.append("--no-sandbox");
+            qputenv("QTWEBENGINE_CHROMIUM_FLAGS", flags);
         }
     }
 

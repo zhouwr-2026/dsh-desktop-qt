@@ -10,6 +10,8 @@
 #include <QWebEnginePage>
 #include <QUrl>
 
+#include <functional>
+
 namespace dsh::web {
 
 class LoopbackWebPage : public QWebEnginePage {

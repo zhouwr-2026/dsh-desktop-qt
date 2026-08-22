@@ -5,6 +5,10 @@
 #include <QDir>
 #include <QEventLoop>
 #include <QFile>
+#include <QJsonArray>
+#include <QJsonDocument>
+#include <QJsonObject>
+#include <QJsonValue>
 #include <QNetworkAccessManager>
 #include <QNetworkReply>
 #include <QNetworkRequest>
@@ -35,8 +39,29 @@ bool httpProbe(const QString& url) {
     return ok && code >= 200 && code < 500;
 }
 
-// 探测活跃任务数：尝试若干公开端点，能解析就用，不能就当 0。
-// 后端 schema 可能演化，所以这里只做粗略统计，不假设结构。
+int countActiveTasks(const QJsonValue& value) {
+    if (value.isArray()) {
+        int total = 0;
+        for (const QJsonValue& item : value.toArray()) total += countActiveTasks(item);
+        return total;
+    }
+    if (!value.isObject()) return 0;
+
+    const QJsonObject object = value.toObject();
+    const QString status = object.value(QStringLiteral("status")).toString().toLower();
+    const bool explicitlyActive = object.value(QStringLiteral("running")).toBool()
+        || object.value(QStringLiteral("active")).toBool()
+        || status == QStringLiteral("running") || status == QStringLiteral("active");
+    if (explicitlyActive) return 1;
+
+    int total = 0;
+    for (auto iterator = object.begin(); iterator != object.end(); ++iterator) {
+        total += countActiveTasks(iterator.value());
+    }
+    return total;
+}
+
+// 探测活跃任务数：尝试若干公开端点，成功解析 JSON 后按明确状态统计。
 int activeTaskProbe(const QString& url) {
     for (const QString path : {"/api/jobs", "/api/sessions?limit=1", "/api/runs?limit=1"}) {
         QNetworkAccessManager nam;
@@ -44,7 +69,13 @@ int activeTaskProbe(const QString& url) {
         QObject::connect(&nam, &QNetworkAccessManager::finished, &loop, &QEventLoop::quit);
         QNetworkRequest req(QUrl(url + path));
         QNetworkReply* reply = nam.get(req);
-        QTimer::singleShot(800, &loop, &QEventLoop::quit);
+        QTimer timer;
+        timer.setSingleShot(true);
+        QObject::connect(&timer, &QTimer::timeout, reply, [reply, &loop]() {
+            reply->abort();
+            loop.quit();
+        });
+        timer.start(800);
         loop.exec();
         if (!reply) continue;
         if (reply->error() != QNetworkReply::NoError) {
@@ -53,10 +84,12 @@ int activeTaskProbe(const QString& url) {
         }
         const QByteArray body = reply->readAll();
         reply->deleteLater();
-        int n = 0;
-        if (body.contains("\"running\"")) ++n;
-        if (body.contains("\"active\"")) ++n;
-        return n;
+        QJsonParseError error{};
+        const QJsonDocument document = QJsonDocument::fromJson(body, &error);
+        if (error.error != QJsonParseError::NoError) continue;
+        return countActiveTasks(document.isArray()
+                                    ? QJsonValue(document.array())
+                                    : QJsonValue(document.object()));
     }
     return 0;
 }

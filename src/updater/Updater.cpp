@@ -3,8 +3,10 @@
 #include "Updater.h"
 
 #include <QDir>
+#include <QElapsedTimer>
 #include <QEventLoop>
 #include <QFile>
+#include <QFileInfo>
 #include <QJsonDocument>
 #include <QJsonObject>
 #include <QNetworkAccessManager>
@@ -16,6 +18,7 @@
 #include <QStringList>
 #include <QTimer>
 
+#include <algorithm>
 #include <utility>
 
 namespace dsh::updater {
@@ -31,36 +34,65 @@ const QRegularExpression kSemVerPattern(
     R"(^[vV]?(?P<major>\d+)\.(?P<minor>\d+)\.(?P<patch>\d+)(?:-(?P<pre>[0-9A-Za-z.-]+))?(?:\+(?P<build>[0-9A-Za-z.-]+))?$)");
 
 struct ParsedSemVer {
-    int major{0};
-    int minor{0};
-    int patch{0};
+    QString major;
+    QString minor;
+    QString patch;
     QString pre;   // 空字符串 == 稳定版
     QString build;
 };
 
-bool parseSemVer(const QString& raw, ParsedSemVer& out) {
-    const QRegularExpressionMatch m = kSemVerPattern.match(raw.trimmed());
-    if (!m.hasMatch()) return false;
-    out.major = m.captured("major").toInt();
-    out.minor = m.captured("minor").toInt();
-    out.patch = m.captured("patch").toInt();
-    out.pre = m.captured("pre");
-    out.build = m.captured("build");
+bool isNumericIdent(const QString& value) {
+    if (value.isEmpty()) return false;
+    for (const QChar character : value) {
+        if (character < QLatin1Char('0') || character > QLatin1Char('9')) return false;
+    }
     return true;
 }
 
-bool isNumericIdent(const QString& s) {
-    bool ok = false;
-    s.toInt(&ok);
-    return ok;
+bool validIdentifiers(const QString& value, bool rejectNumericLeadingZero) {
+    if (value.isEmpty()) return true;
+    const QStringList identifiers = value.split('.', Qt::KeepEmptyParts);
+    for (const QString& identifier : identifiers) {
+        if (identifier.isEmpty()) return false;
+        if (rejectNumericLeadingZero && isNumericIdent(identifier)
+            && identifier.size() > 1 && identifier.startsWith(QLatin1Char('0'))) {
+            return false;
+        }
+    }
+    return true;
+}
+
+bool parseSemVer(const QString& raw, ParsedSemVer& out) {
+    const QRegularExpressionMatch match = kSemVerPattern.match(raw.trimmed());
+    if (!match.hasMatch()) return false;
+    out.major = match.captured("major");
+    out.minor = match.captured("minor");
+    out.patch = match.captured("patch");
+    out.pre = match.captured("pre");
+    out.build = match.captured("build");
+    if ((out.major.size() > 1 && out.major.startsWith(QLatin1Char('0')))
+        || (out.minor.size() > 1 && out.minor.startsWith(QLatin1Char('0')))
+        || (out.patch.size() > 1 && out.patch.startsWith(QLatin1Char('0')))) {
+        return false;
+    }
+    return validIdentifiers(out.pre, true) && validIdentifiers(out.build, false);
+}
+
+int compareNumericIdent(const QString& left, const QString& right) {
+    if (left.size() != right.size()) return left.size() > right.size() ? 1 : -1;
+    const int comparison = QString::compare(left, right, Qt::CaseSensitive);
+    return (comparison > 0) - (comparison < 0);
 }
 
 // 严格 SemVer 比较：稳定版 > 同号预发布版；预发布号按标识符逐项比较
 // （数字标识符 < 非数字标识符）。
 int compareSemVer(const ParsedSemVer& a, const ParsedSemVer& b) {
-    if (a.major != b.major) return (a.major > b.major) - (a.major < b.major);
-    if (a.minor != b.minor) return (a.minor > b.minor) - (a.minor < b.minor);
-    if (a.patch != b.patch) return (a.patch > b.patch) - (a.patch < b.patch);
+    for (const auto& pair : {std::pair{a.major, b.major},
+                             std::pair{a.minor, b.minor},
+                             std::pair{a.patch, b.patch}}) {
+        const int comparison = compareNumericIdent(pair.first, pair.second);
+        if (comparison != 0) return comparison;
+    }
     // SemVer 2.0：稳定版 > 预发布版
     if (a.pre.isEmpty() && !b.pre.isEmpty()) return 1;
     if (!a.pre.isEmpty() && b.pre.isEmpty()) return -1;
@@ -74,15 +106,20 @@ int compareSemVer(const ParsedSemVer& a, const ParsedSemVer& b) {
         if (x == y) continue;
         const bool xn = isNumericIdent(x);
         const bool yn = isNumericIdent(y);
-        if (xn && yn) {
-            const int xi = x.toInt(), yi = y.toInt();
-            return (xi > yi) - (xi < yi);
-        }
+        if (xn && yn) return compareNumericIdent(x, y);
         if (xn) return -1;  // 数字 < 非数字
         if (yn) return 1;
         return (x > y) - (x < y);
     }
     return (ai.size() > bi.size()) - (ai.size() < bi.size());
+}
+
+bool isTrustedRootExecutable(const QString& path) {
+    const QFileInfo info(path);
+    const QFileDevice::Permissions writableByOthers =
+        QFileDevice::WriteGroup | QFileDevice::WriteOther;
+    return info.isFile() && info.isExecutable() && info.ownerId() == 0
+        && !(info.permissions() & writableByOthers);
 }
 
 }  // namespace
@@ -125,10 +162,21 @@ QString Updater::fetchLatestVersion(int timeoutSeconds) {
     req.setRawHeader("Accept", "application/json");
     req.setRawHeader("User-Agent", "dsh-desktop/0.1 (Qt6)");
     QNetworkReply* reply = nam.get(req);
-    QTimer::singleShot(timeoutSeconds * 1000, &loop, &QEventLoop::quit);
+    QTimer timer;
+    timer.setSingleShot(true);
+    QObject::connect(&timer, &QTimer::timeout, reply, [reply, &loop]() {
+        reply->abort();
+        loop.quit();
+    });
+    timer.start(qMax(1, timeoutSeconds) * 1000);
     loop.exec();
     if (!reply) return {};
     if (reply->error() != QNetworkReply::NoError) {
+        reply->deleteLater();
+        return {};
+    }
+    const int httpStatus = reply->attribute(QNetworkRequest::HttpStatusCodeAttribute).toInt();
+    if (httpStatus < 200 || httpStatus >= 300) {
         reply->deleteLater();
         return {};
     }
@@ -150,8 +198,8 @@ Status Updater::check(int timeoutSeconds) {
     }
     ParsedSemVer cur, lat;
     if (!parseSemVer(s.current, cur) || !parseSemVer(s.latest, lat)) {
-        s.detail = "SemVer 解析失败，退化为字符串比较";
-        s.updateAvailable = (s.latest != s.current);
+        s.detail = "SemVer 解析失败，已拒绝更新";
+        s.updateAvailable = false;
         return s;
     }
     s.updateAvailable = (compareSemVer(lat, cur) > 0);
@@ -159,23 +207,29 @@ Status Updater::check(int timeoutSeconds) {
     return s;
 }
 
-bool Updater::performUpdate(const QString& label) {
-    label_ = label;
-    Q_UNUSED(label_);
-    auto pkexec = QStandardPaths::findExecutable("pkexec");
-    auto npm = QStandardPaths::findExecutable("npm");
-    if (pkexec.isEmpty()) {
-        emit log("updater: pkexec 未安装（请先安装 polkit）");
+bool Updater::performUpdate() {
+    ParsedSemVer target;
+    const QString version = targetVersion_.trimmed();
+    if (!parseSemVer(version, target)) {
+        emit log(QStringLiteral("updater: 拒绝无效目标版本 %1").arg(version));
         return false;
     }
-    if (npm.isEmpty()) {
-        emit log("updater: npm 未安装");
+
+    const QString pkexec = QStringLiteral("/usr/bin/pkexec");
+    const QString npm = QStringLiteral("/usr/bin/npm");
+    if (!isTrustedRootExecutable(pkexec)) {
+        emit log("updater: /usr/bin/pkexec 不存在或权限不安全");
         return false;
     }
+    if (!isTrustedRootExecutable(npm)) {
+        emit log("updater: /usr/bin/npm 不存在或权限不安全");
+        return false;
+    }
+    const QString packageSpec = QStringLiteral("@deepseek-ai/dsh@%1").arg(version);
     const QStringList args = {
         "--disable-internal-agent",
         npm, "install", "-g",
-        "@deepseek-ai/dsh@latest",
+        packageSpec,
         "--no-audit", "--no-fund"
     };
     QProcess p;
@@ -187,14 +241,25 @@ bool Updater::performUpdate(const QString& label) {
         emit log(QStringLiteral("updater: 启动失败 %1").arg(p.errorString()));
         return false;
     }
-    // 同步等待输出——UI 层会用 QThread 包装避免阻塞主事件循环
-    while (p.state() != QProcess::NotRunning) {
-        if (!p.waitForFinished(500)) continue;
-        break;
+    QElapsedTimer elapsed;
+    elapsed.start();
+    constexpr qint64 kUpdateTimeoutMs = 10 * 60 * 1000;
+    while (p.state() != QProcess::NotRunning && elapsed.elapsed() < kUpdateTimeoutMs) {
+        p.waitForFinished(500);
+    }
+    if (p.state() != QProcess::NotRunning) {
+        emit log("updater: 更新进程超时，正在终止");
+        p.terminate();
+        if (!p.waitForFinished(3000)) {
+            p.kill();
+            p.waitForFinished(3000);
+        }
+        return false;
     }
     if (p.exitStatus() != QProcess::NormalExit) return false;
     const bool ok = (p.exitCode() == 0);
-    emit log(QStringLiteral("updater: pkexec npm install -> rc=%1").arg(p.exitCode()));
+    emit log(QStringLiteral("updater: 安装 %1 -> rc=%2")
+                 .arg(packageSpec).arg(p.exitCode()));
     return ok;
 }
 

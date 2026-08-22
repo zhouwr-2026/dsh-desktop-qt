@@ -10,8 +10,7 @@
 #   2. 用 npm 装 dsh CLI（如已装则跳过）
 #   3. cmake 构建并 ninja install 到 /usr
 #   4. 注册黑白鲸鱼 SVG + PNG 到 hicolor 图标主题
-#   5. 写入 /usr/share/polkit-1/actions/org.dsh.desktop.policy（更新时弹密码框）
-#   6. 若 dsh-web.service 已存在则启用并启动
+#   5. 若 dsh-web.service 已存在则启用并启动
 
 set -euo pipefail
 
@@ -38,7 +37,7 @@ ensure_pkgs() {
   fi
 
   local missing=()
-  for pkg in qt6-base qt6-webengine qt6-tools libxcb cmake ninja extra-cmake-modules; do
+  for pkg in qt6-base qt6-webengine qt6-svg qt6-tools libxcb cmake ninja extra-cmake-modules npm polkit procps-ng; do
     if ! pacman -Q "$pkg" >/dev/null 2>&1; then
       missing+=("$pkg")
     fi
@@ -52,13 +51,11 @@ ensure_pkgs() {
   fi
 
   # dsh 是 npm 全局包，pacman 仓库没有
+  if ! command -v npm >/dev/null 2>&1; then
+    die "npm 安装后仍不可用，请检查系统 PATH"
+  fi
   if ! command -v dsh >/dev/null 2>&1; then
     log "未检测到 dsh CLI；通过 npm 全局安装"
-    if ! command -v npm >/dev/null 2>&1; then
-      if ! pacman -Q nodejs >/dev/null 2>&1; then
-        pacman -S --needed --noconfirm nodejs
-      fi
-    fi
     npm install -g @deepseek-ai/dsh
   else
     log "dsh 已就绪：$(command -v dsh)"
@@ -127,28 +124,6 @@ install_desktop_file() {
   fi
 }
 
-install_polkit_policy() {
-  log "安装 polkit 策略（用于 pkexec npm 升级）"
-  local polkit_dir="/usr/share/polkit-1/actions"
-  mkdir -p "$polkit_dir"
-  cat > "$polkit_dir/org.dsh.desktop.policy" <<'EOF'
-<?xml version="1.0" encoding="UTF-8"?>
-<!DOCTYPE policyconfig PUBLIC "-//freedesktop//DTD polkit Policy Configuration 1.0//EN"
- "http://www.freedesktop.org/standards/policykit/1.0/policyconfig.dtd">
-<policyconfig>
-  <action id="org.dsh.desktop.update">
-    <description>Update DSH (npm) package</description>
-    <message>认证用于更新系统级 dsh 包</message>
-    <defaults>
-      <allow_active>auth_admin_keep</allow_active>
-      <allow_inactive>no</allow_inactive>
-      <allow_locked>no</allow_locked>
-    </defaults>
-  </action>
-</policyconfig>
-EOF
-}
-
 configure_dsh_service() {
   log "检查 dsh-web.service（systemd）"
   if systemctl list-unit-files dsh-web.service >/dev/null 2>&1; then
@@ -209,7 +184,6 @@ main() {
   install_artifacts
   install_icons
   install_desktop_file
-  install_polkit_policy
   configure_dsh_service
   configure_theme_export
 

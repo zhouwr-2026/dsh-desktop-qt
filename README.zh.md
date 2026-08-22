@@ -18,13 +18,13 @@
 | 3. 退出原生对话框 + 后台服务勾选 | `QDialog` + `QCheckBox`；检测到活跃任务时显式高亮提示；勾选后才调 `systemctl stop dsh-web.service`（polkit 弹框）。 |
 | 4. 黑/白鲸鱼 SVG 主题自适应 | 鲸鱼路径直接来自 <https://github.com/deepseek-ai/deepseek-harness/blob/master/website/public/favicon.svg>；**重新设计为"五彩斑斓的黑"**：主体深色渐变填充（墨蓝→深蓝）+ 六色霓虹彩虹描边（红橙黄绿蓝紫），覆盖率从 0.64% 提升到 62%，在暗色主题下依然醒目；白色版为白鲸 + 彩虹描边；`ThemeWatcher` 同时监听 Qt `QStyleHints.colorScheme()`、KDE `~/.config/kdeglobals` 与 `~/.config/plasmarc`、`org.freedesktop.portal.Settings`；托盘 / 窗口 / 任务栏统一跟随；远程 xrdp 场景可用 `--theme dark` 强制暗色。 |
 | 5. session-logs 下载 | `QWebEngineProfile::downloadRequested` 拦截 `/api/session.export?sessionId=...`；弹原生保存对话框；由 WebEngine 原生下载保留 Cookie、代理和证书状态，并显示 `QProgressDialog`；完成后弹原生提示和 KDE 通知。 |
-| 6. 外部链接走系统浏览器 | 自定义 `LoopbackWebPage::acceptNavigationRequest` 拒绝任何离开 `127.0.0.1` / `localhost` 的 http(s)；`newWindowRequested` 处理 `target=_blank`；统一走 `QDesktopServices::openUrl` → `xdg-open` 三级回退。 |
+| 6. 外部链接走系统浏览器 | 自定义 `LoopbackWebPage::acceptNavigationRequest` 只允许应用精确同源导航；其他 HTTP(S)、`mailto:` 与 `tel:` 交给 `QDesktopServices::openUrl`，并拒绝 `file:`、`javascript:` 等危险 scheme。 |
 
 ## 系统要求
 
 * Arch Linux（或其他基于 Arch 的发行版）
 * KDE Plasma 6（Breeze 主题；GNOME 也兼容但体验略逊）
-* Qt6 ≥ 6.5（base + webengine + dbus）
+* Qt6 ≥ 6.5（base + webengine + dbus + svg）
 * 已安装的 `dsh` 包（≥ 0.1.0-rc.7）—— 通过 `npm i -g @deepseek-ai/dsh` 安装
 
 ## 安装
@@ -35,14 +35,12 @@ sudo packaging/install.sh
 
 脚本会：
 
-1. 用 pacman 装齐运行时依赖（`qt6-base`、`qt6-webengine`、`cmake`、`ninja`、`extra-cmake-modules`、`polkit`）。
+1. 用 pacman 装齐运行时依赖（包括 `qt6-base`、`qt6-webengine`、`qt6-svg`、`npm`、`polkit`）。
 2. 通过 npm 安装 `@deepseek-ai/dsh`（若已装则跳过）。
-3. cmake + ninja 构建并安装到 `/usr`。
-4. 注册黑/白鲸鱼 SVG 与 PNG 变体到 `/usr/share/icons/hicolor/` 并刷新图标缓存。
-5. 写入 `/usr/share/applications/dsh-desktop.desktop`。
-6. 写入 `/usr/share/polkit-1/actions/org.dsh.desktop.policy`（pkexec 升级时弹密码框）。
-7. 若 `dsh-web.service` 已存在则启用并启动。
-8. 写入 `/etc/xdg/autostart/dsh-desktop.desktop`，对所有桌面用户启用登录自启动。
+3. 在仓库固定的 `build/` 目录中使用 CMake + Ninja 构建并安装到 `/usr`。
+4. 注册黑/白鲸鱼图标并刷新图标缓存。
+5. 安装应用菜单、自启动项和主题导出服务。
+6. 若 `dsh-web.service` 已存在则启用并启动。
 
 也可以打成 Arch 包：
 
@@ -103,7 +101,7 @@ dsh-desktop --theme dark
 | 托盘 Tooltip | 鼠标悬停托盘图标时仅显示应用名称 `DSH Desktop`，不暴露内部实现或服务地址 |
 | 清空下载缓存 | 托盘"清空下载缓存"项；双层确认（先看文件数 + 二次弹 QMessageBox） |
 | systemd unit 自动检测 | 优先 systemd 模式；找不到 `dsh-web.service` 时回退到 `dsh web` 子进程 |
-| polkit 策略 | 升级时通过 `pkexec` 弹密码框，不静默提权 |
+| polkit 提权 | 升级时通过系统 `pkexec` 默认策略弹出管理员认证，不安装无效的自定义 action |
 
 ## 后端管理策略
 
@@ -122,14 +120,13 @@ dsh-desktop --theme dark
 ## 构建与运行
 
 ```sh
-mkdir build && cd build
-cmake -G Ninja -DCMAKE_BUILD_TYPE=Release ..
-ninja
-./dsh-desktop         # 正常启动
-./dsh-desktop --smoke # 仅探测后端
-./dsh-desktop --self-test  # 启动 + 输出 JSON 报告 + 自动退出
-ctest --output-on-failure  # 单元测试
+cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release
+cmake --build build --parallel
+ctest --test-dir build --output-on-failure
+build/dsh-desktop --smoke
 ```
+
+图形模式默认拒绝 root 运行，以避免关闭 Chromium 沙箱。仅在已隔离并明确承担风险的环境中设置 `DSH_DESKTOP_ALLOW_ROOT=1`。
 
 ## 调试
 
