@@ -1,0 +1,44 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "dsh-desktop"
+version = "0.1.0"
+description = "Native Linux/KDE6 wrapper for the official DeepSeek Harness web UI"
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "MIT" }
+authors = [
+    { name = "DSH Desktop Maintainers" },
+]
+dependencies = [
+    "PyQt6>=6.6",
+    "PyQt6-WebEngine>=6.6",
+    "requests>=2.31",
+]
+keywords = ["dsh", "deepseek-harness", "kde", "plasma", "system-tray"]
+classifiers = [
+    "Environment :: X11 Applications :: Qt",
+    "Intended Audience :: End Users/Desktop",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: POSIX :: Linux",
+    "Programming Language :: Python :: 3",
+    "Topic :: Utilities",
+]
+
+[project.scripts]
+dsh-desktop = "dsh_desktop.app:main"
+
+[tool.setuptools]
+include-package-data = true
+
+[tool.setuptools.packages.find]
+include = ["dsh_desktop*"]
+
+[tool.setuptools.package-data]
+"dsh_desktop" = ["../assets/*.svg", "../assets/icons/*.png"]
+
+[tool.setuptools.data-files]
+"share/dsh-desktop/assets" = ["assets/*.svg"]
+"share/dsh-desktop/assets/icons" = ["assets/icons/*.png"]

@@ -1,0 +1,13 @@
+[Desktop Entry]
+Type=Application
+Name=DSH Desktop
+GenericName=DeepSeek Harness Desktop
+Comment=DeepSeek Harness 在 KDE Plasma 6 上的原生托盘包装器
+Exec=dsh-desktop
+Icon=dsh-whale
+Terminal=false
+Categories=Development;
+StartupNotify=false
+StartupWMClass=dsh.desktop
+Keywords=dsh;deepseek;harness;ai;agent;
+X-KDE-autostart-after=panel

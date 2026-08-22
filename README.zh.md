@@ -1,0 +1,194 @@
+# DSH Desktop — Arch Linux / KDE Plasma 6 原生桌面端
+
+> DeepSeek Harness (DSH) 在 Linux 上的 **C++/Qt6 原生**托盘包装器。基于官
+> 网源码 <https://github.com/deepseek-ai/deepseek-harness> ，不 fork 任何上
+> 游代码，只负责把官方 `dsh web` 进程包成一个 KDE6 风格的托盘 + 窗口应
+> 用。
+
+参考实现 <https://github.com/anywhere-labs/deepseek-harness-desktop>
+只提供 Windows / macOS 安装包，且依赖 Electron。本项目用 **Qt6 + KDE 原
+> 生接口**提供同等体验，且完全用 C++ 实现，零运行时 Python 依赖。
+
+## 特性（对照需求 1–6）
+
+| 需求 | 实现 |
+| --- | --- |
+| 1. 原生 Linux 栈 | C++17 + Qt6 6.5+ + KDE Plasma 6 的 `StatusNotifierItem` 协议 + `org.freedesktop.*` D-Bus；不引入 Electron / Tauri。 |
+| 2. 常驻托盘 + 菜单 | `QSystemTrayIcon` + `QMenu`；菜单含 `显示桌面 / 隐藏桌面 / 检查更新 / 更新到最新版（仅在发现新版本时显示） / 重启桌面 / 退出`。 |
+| 3. 退出原生对话框 + 后台服务勾选 | `QDialog` + `QCheckBox`；检测到活跃任务时显式高亮提示；勾选后才调 `systemctl stop dsh-web.service`（polkit 弹框）。 |
+| 4. 黑/白鲸鱼 SVG 主题自适应 | 鲸鱼路径直接来自 <https://github.com/deepseek-ai/deepseek-harness/blob/master/website/public/favicon.svg>；**重新设计为"五彩斑斓的黑"**：主体深色渐变填充（墨蓝→深蓝）+ 六色霓虹彩虹描边（红橙黄绿蓝紫），覆盖率从 0.64% 提升到 62%，在暗色主题下依然醒目；白色版为白鲸 + 彩虹描边；`ThemeWatcher` 同时监听 Qt `QStyleHints.colorScheme()`、KDE `~/.config/kdeglobals` 与 `~/.config/plasmarc`、`org.freedesktop.portal.Settings`；托盘 / 窗口 / 任务栏统一跟随；远程 xrdp 场景可用 `--theme dark` 强制暗色。 |
+| 5. session-logs 下载 | `QWebEngineProfile::downloadRequested` 拦截 `/api/session.export?sessionId=...`；弹原生保存对话框；由 WebEngine 原生下载保留 Cookie、代理和证书状态，并显示 `QProgressDialog`；完成后弹原生提示和 KDE 通知。 |
+| 6. 外部链接走系统浏览器 | 自定义 `LoopbackWebPage::acceptNavigationRequest` 拒绝任何离开 `127.0.0.1` / `localhost` 的 http(s)；`newWindowRequested` 处理 `target=_blank`；统一走 `QDesktopServices::openUrl` → `xdg-open` 三级回退。 |
+
+## 系统要求
+
+* Arch Linux（或其他基于 Arch 的发行版）
+* KDE Plasma 6（Breeze 主题；GNOME 也兼容但体验略逊）
+* Qt6 ≥ 6.5（base + webengine + dbus）
+* 已安装的 `dsh` 包（≥ 0.1.0-rc.7）—— 通过 `npm i -g @deepseek-ai/dsh` 安装
+
+## 安装
+
+```sh
+sudo packaging/install.sh
+```
+
+脚本会：
+
+1. 用 pacman 装齐运行时依赖（`qt6-base`、`qt6-webengine`、`cmake`、`ninja`、`extra-cmake-modules`、`polkit`）。
+2. 通过 npm 安装 `@deepseek-ai/dsh`（若已装则跳过）。
+3. cmake + ninja 构建并安装到 `/usr`。
+4. 注册黑/白鲸鱼 SVG 与 PNG 变体到 `/usr/share/icons/hicolor/` 并刷新图标缓存。
+5. 写入 `/usr/share/applications/dsh-desktop.desktop`。
+6. 写入 `/usr/share/polkit-1/actions/org.dsh.desktop.policy`（pkexec 升级时弹密码框）。
+7. 若 `dsh-web.service` 已存在则启用并启动。
+8. 写入 `/etc/xdg/autostart/dsh-desktop.desktop`，对所有桌面用户启用登录自启动。
+
+也可以打成 Arch 包：
+
+```sh
+# 在仓库根目录外构建
+cp -r DSH-Desktop /tmp/dsh-desktop-0.1.0 && cd /tmp
+tar czf dsh-desktop-0.1.0.tar.gz dsh-desktop-0.1.0
+cd dsh-desktop-0.1.0 && makepkg -si
+```
+
+启动：
+
+* 命令行：`dsh-desktop`
+* KDE 启动器：搜索 "DSH Desktop"
+* KDE 登录自启动：托盘会随 Plasma 会话自动出现（已写入 `/etc/xdg/autostart/`）
+
+## CLI 模式
+
+| 参数 | 用途 |
+| --- | --- |
+| `--smoke` | 仅探测后端可达性，立即退出（脚本友好，写到 stderr） |
+| `--self-test` | 启动完整应用 + 输出 JSON 报告（`DSH_DESKTOP_SELF_TEST_BEGIN/END`） + 自动退出 |
+| `--probe` | 环境探测：DISPLAY / D-Bus / KDE 托盘 watcher / 通知服务 / dsh-web 五项 |
+| `--log-file <path>` | 把日志同时写入文件（启动时即生效） |
+| `--url <url>` | 覆盖默认的 `http://127.0.0.1:3080` |
+| `--theme <dark\|light>` | 强制托盘/窗口图标主题颜色（默认自动检测）。**远程 xrdp / VNC 场景下 KDE Plasma 跑在 root user、arch user 看不到 root 配置；必须用 `--theme dark` 显式选暗色才能拿到白色鲸鱼图标** |
+| `-h, --help` / `-v, --version` | 标准 Qt CLI |
+
+示例：
+
+```sh
+# 安装后第一次自检
+dsh-desktop --probe
+
+# 调试模式：把日志写到文件
+dsh-desktop --log-file ~/.local/share/dsh-desktop/dsh-desktop.log
+
+# 调试模式：连到远端 dsh-web
+dsh-desktop --url http://my-server:3080
+
+# 远程 xrdp / VNC：KDE Plasma 6 跑 Breeze Dark 主题，强制暗色图标
+dsh-desktop --theme dark
+```
+
+## 增强功能（"取长补短"）
+
+| 功能 | 说明 |
+| --- | --- |
+| 启动后 60s 自动后台检查更新 | 静默模式命中更新时只发 KDE 通知，不打断用户 |
+| XDG 数据目录下载路径 | 会话日志默认存到 `~/.local/share/dsh-desktop/downloads/`，不污染 `~/Downloads/` |
+| KDE 登录自启动 | `packaging/install.sh` 自动写入 `/etc/xdg/autostart/dsh-desktop.desktop` |
+| 单实例锁 | `QLocalServer` + `QLocalSocket` 实现；二次启动唤醒原实例并立即退出 |
+| 窗口几何持久化 | 窗口大小/位置/状态保存到 `~/.config/anywhere-labs/dsh-desktop.ini`，屏幕校验 |
+| 启动失败诊断 | `which dsh` / `systemctl status` / `ss -ltn` 等可执行命令写到错误对话框详细文本 |
+| 关于对话框 | 托盘"关于"菜单显示版本、作者、官方仓库、技术栈 |
+| 日志查看器 | 托盘"查看日志"打开 Qt `AppDataLocation` 下的 `dsh-desktop.log` 末尾（智能截断 512 KB） |
+| 后端健康监控 | 每 30 秒探测 dsh-web 状态；停止/恢复时通过 KDE 通知告知用户 |
+| 托盘 Tooltip | 鼠标悬停托盘图标时仅显示应用名称 `DSH Desktop`，不暴露内部实现或服务地址 |
+| 清空下载缓存 | 托盘"清空下载缓存"项；双层确认（先看文件数 + 二次弹 QMessageBox） |
+| systemd unit 自动检测 | 优先 systemd 模式；找不到 `dsh-web.service` 时回退到 `dsh web` 子进程 |
+| polkit 策略 | 升级时通过 `pkexec` 弹密码框，不静默提权 |
+
+## 后端管理策略
+
+桌面端按环境选择后端生命周期策略：优先委托现有
+`dsh-web.service`（systemd）；找不到 unit 时直接拉起并监管 `dsh web`
+子进程；显式远程 URL 则完全不管理其生命周期：
+
+* 启动时若 `http://127.0.0.1:3080` 不通，托盘会弹原生警告并尝试
+  `systemctl start dsh-web.service`；仍然失败则窗口依然打开但显示空白。
+* 托盘 `重启桌面` 调用 `systemctl restart dsh-web.service`，再重载页面。
+* 退出对话框的 `同时停止后台 dsh web 服务` 勾选框勾选后才执行
+  `systemctl stop dsh-web.service`（polkit 弹框）。
+* 当 `dsh-web.service` 未安装时，桌面端自动回退到 `dsh web` 子进程模式，
+  退出对话框的勾选框变为 `同时停止由桌面端拉起的 dsh web 子进程`。
+
+## 构建与运行
+
+```sh
+mkdir build && cd build
+cmake -G Ninja -DCMAKE_BUILD_TYPE=Release ..
+ninja
+./dsh-desktop         # 正常启动
+./dsh-desktop --smoke # 仅探测后端
+./dsh-desktop --self-test  # 启动 + 输出 JSON 报告 + 自动退出
+ctest --output-on-failure  # 单元测试
+```
+
+## 调试
+
+```sh
+DSH_DESKTOP_DEBUG=1 dsh-desktop   # 暂未启用，预留位
+# 日志默认写入 XDG AppDataLocation，可用 --log-file 覆盖
+QT_QPA_PLATFORM=offscreen ./dsh-desktop --self-test  # 离屏自检
+```
+
+## 与参考实现的差异（取长补短）
+
+* 不用 Electron — 体积更小、与 Plasma 6 的 StatusNotifier 协议原生对齐；
+  渲染走 Chromium 但经由系统 QtWebEngine，无需自带一份 Chromium。
+* 托盘主题切换实时生效。
+* session-logs 拦截使用 Qt 信号 `downloadRequested`，比参考实现的
+  `webContents.session.on('will-download')` 更原生。
+* 外部链接拦截走 `acceptNavigationRequest` 虚函数，能在导航发生前阻断；
+  包括 iframe 与 `target=_blank`。
+* 全 C++ 实现，零 Python 运行时依赖，启动更快、内存占用更低。
+* 单实例锁用本地 socket 而非 fcntl，跨平台更友好。
+* 升级通过 npm + pkexec（参考实现用 Cordis 插件机制；本项目按 Linux
+  原生习惯走包管理器+polkit）。
+
+## 卸载
+
+```sh
+sudo packaging/install.sh --uninstall
+```
+
+卸载脚本会移除系统级可执行文件、桌面/自启动条目、图标、polkit 策略和主题
+导出服务；用户配置、日志、WebEngine 数据和下载文件默认保留。
+
+如果是 `makepkg -si` 安装的 Arch 包，`sudo pacman -Rns dsh-desktop` 一步搞定。
+
+## 项目结构
+
+```
+DSH-Desktop/
+├── CMakeLists.txt
+├── src/                         # C++ 源码
+│   ├── main.cpp                 # 入口
+│   ├── app/                     # DshDesktopApp / DshWindow / TrayController / Dialogs
+│   ├── backend/                 # Backend 抽象 + SystemdBackend + SupervisedBackend
+│   ├── icon/                    # IconLoader
+│   ├── theme/                   # ThemeWatcher
+│   ├── updater/                 # Updater (npm registry + pkexec)
+│   ├── util/                    # Logger / Notify (D-Bus)
+│   └── web/                     # LoopbackWebPage + DownloadInterceptor
+├── assets/                      # 黑白鲸鱼 SVG + PNG（嵌入到二进制）
+│   └── icons.qrc
+├── tests/                       # Qt Test
+├── packaging/                   # PKGBUILD + .desktop + install.sh
+├── legacy_py/                   # 旧 Python 实现（保留参考）
+├── scripts/
+│   └── smoke.sh                 # 端到端冒烟
+├── README.md
+└── README.zh.md
+```
+
+## 许可
+
+MIT

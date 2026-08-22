@@ -1,0 +1,12 @@
+<!--
+  @author zhouwr
+  Qt 资源清单：统一 logo = 黑白两个小鲸鱼 SVG，按系统主题切换。
+  不再使用任何 PNG 变体——Qt 原生渲染 SVG。
+-->
+<!DOCTYPE RCC>
+<RCC version="1.0">
+  <qresource prefix="/dsh">
+    <file>dsh-whale-black.svg</file>
+    <file>dsh-whale-white.svg</file>
+  </qresource>
+</RCC>

@@ -1,0 +1,42 @@
+#!/usr/bin/env bash
+# 将 root KDE 会话的主题导出为不含其他配置的只读运行态标记。
+
+set -euo pipefail
+
+source_file="${DSH_KDEGLOBALS_SOURCE:-/root/.config/kdeglobals}"
+output_file="${DSH_THEME_OUTPUT:-/run/dsh-desktop/theme}"
+
+output_directory="$(dirname "$output_file")"
+# -p 不修改已存在目录的权限；尤其不能把 /tmp 的 1777 改成 0755。
+mkdir -p -m 0755 "$output_directory"
+
+require_root_plasma="${DSH_THEME_REQUIRE_ROOT_PLASMA:-1}"
+if { [[ "$require_root_plasma" != 0 ]] \
+     && ! pgrep --uid 0 --exact plasmashell >/dev/null 2>&1; } \
+   || [[ ! -r "$source_file" ]]; then
+    rm -f "$output_file"
+    exit 0
+fi
+
+value="$(awk -F= '
+    /^\[/ { section=$0; next }
+    section == "[KDE]" && $1 == "LookAndFeelPackage" { look_and_feel=$2 }
+    section == "[General]" && $1 == "ColorScheme" { color_scheme=$2 }
+    END {
+        if (look_and_feel != "") print look_and_feel
+        else if (color_scheme != "") print color_scheme
+    }
+' "$source_file")"
+
+case "${value,,}" in
+    *dark*) theme=dark ;;
+    *light*|*breeze*) theme=light ;;
+    *) rm -f "$output_file"; exit 0 ;;
+esac
+
+temporary="$(mktemp "$output_directory/.theme.XXXXXX")"
+trap 'rm -f "$temporary"' EXIT
+printf '%s\n' "$theme" > "$temporary"
+chmod 0644 "$temporary"
+mv -f "$temporary" "$output_file"
+trap - EXIT

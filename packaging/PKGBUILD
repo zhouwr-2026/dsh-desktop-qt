@@ -1,0 +1,45 @@
+# Maintainer: zhouwr
+# Arch Linux PKGBUILD for DSH Desktop (KDE Plasma 6 wrapper)
+
+pkgname=dsh-desktop
+pkgver=0.1.0
+pkgrel=1
+pkgdesc='DeepSeek Harness 在 Arch Linux / KDE Plasma 6 上的原生托盘包装器'
+arch=('x86_64' 'aarch64')
+url='https://github.com/anywhere-labs/deepseek-harness-desktop'
+license=('MIT')
+depends=(
+    'qt6-base'
+    'qt6-webengine'
+    'libxcb'
+    'knotifications'
+    'dsh'           # @deepseek-ai/dsh 通过 npm 安装
+    'npm'
+    'polkit'
+    'procps-ng'
+)
+makedepends=(
+    'cmake'
+    'ninja'
+    'qt6-tools'
+    'extra-cmake-modules'
+)
+optdepends=(
+    'polkit-kde-agent: polkit 密码框'
+)
+source=("$pkgname-$pkgver.tar.gz")
+sha256sums=('SKIP')
+
+build() {
+    cd "$pkgname-$pkgver"
+    cmake -B build -S . -G Ninja \
+        -DCMAKE_BUILD_TYPE=Release \
+        -DCMAKE_INSTALL_PREFIX=/usr
+    ninja -C build
+}
+
+package() {
+    cd "$pkgname-$pkgver"
+    DESTDIR="$pkgdir" ninja -C build install
+    install -Dm644 LICENSE "$pkgdir/usr/share/licenses/$pkgname/LICENSE"
+}

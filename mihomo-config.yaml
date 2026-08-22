@@ -1,0 +1,339 @@
+mixed-port: 7897
+allow-lan: false
+bind-address: '*'
+mode: rule
+log-level: info
+ipv6: false
+external-controller: 127.0.0.1:9090
+proxies:
+- name: 请看网站公告
+  server: 185.229.222.216
+  port: 443
+  udp: true
+  type: vless
+  uuid: 21fb35b7-8720-464f-82b4-1d91bd3d039a
+  network: tcp
+  tls: true
+  servername: www.lamer.com.sg
+  client-fingerprint: chrome
+  flow: xtls-rprx-vision
+  reality-opts:
+    public-key: CBkV6zFn1TL1ZsmNRAFjtQLS4b0HILlSaOqEyB7ZnkA
+    short-id: 520980f1e04645
+- name: 请尽快下载专用客户端使用
+  server: 185.229.222.21
+  port: 443
+  udp: true
+  type: vless
+  uuid: 21fb35b7-8720-464f-82b4-1d91bd3d039a
+  network: tcp
+  tls: true
+  servername: zh-hk.vuejs.org
+  client-fingerprint: chrome
+  flow: xtls-rprx-vision
+  reality-opts:
+    public-key: 38tmeUIWru-CqbwS4Yf6Ic08QbvM9PP8CjbGVwEA1hw
+    short-id: c144680bc4d809
+- name: 🇸🇬AWS新加坡02|电信优化
+  server: asg2.jueduibupao.top
+  port: 7000
+  udp: true
+  type: anytls
+  uuid: 21fb35b7-8720-464f-82b4-1d91bd3d039a
+  sni: www.microsoft.com
+  skip-cert-verify: true
+  password: 21fb35b7-8720-464f-82b4-1d91bd3d039a
+- name: 🇸🇬AWS新加坡03|电信优化|流媒体解锁
+  server: asg3.jueduibupao.top
+  port: 7000
+  udp: true
+  type: anytls
+  uuid: 21fb35b7-8720-464f-82b4-1d91bd3d039a
+  sni: www.microsoft.com
+  skip-cert-verify: true
+  password: 21fb35b7-8720-464f-82b4-1d91bd3d039a
+- name: 🇯🇵AWS日本02|流媒体解锁
+  server: ajp2.jueduibupao.top
+  port: 7000
+  udp: true
+  type: anytls
+  uuid: 21fb35b7-8720-464f-82b4-1d91bd3d039a
+  sni: www.microsoft.com
+  skip-cert-verify: true
+  password: 21fb35b7-8720-464f-82b4-1d91bd3d039a
+- name: 🇰🇷AWS韩国01|流媒体解锁
+  server: akr1.jueduibupao.top
+  port: 7000
+  udp: true
+  type: anytls
+  uuid: 21fb35b7-8720-464f-82b4-1d91bd3d039a
+  sni: www.microsoft.com
+  skip-cert-verify: true
+  password: 21fb35b7-8720-464f-82b4-1d91bd3d039a
+- name: 🇭🇰香港HKT01|移动优化
+  server: dafeizhu.xxxyun.top
+  port: 55001
+  udp: true
+  type: anytls
+  uuid: 21fb35b7-8720-464f-82b4-1d91bd3d039a
+  sni: atlhk1.jueduibupao.top
+  skip-cert-verify: false
+  password: 21fb35b7-8720-464f-82b4-1d91bd3d039a
+- name: 🇭🇰香港HKT03|v6入口
+  server: shouzhuzhu.niubifast.cc
+  port: 45001
+  udp: true
+  type: anytls
+  uuid: 21fb35b7-8720-464f-82b4-1d91bd3d039a
+  sni: atlhk1.jueduibupao.top
+  skip-cert-verify: false
+  password: 21fb35b7-8720-464f-82b4-1d91bd3d039a
+- name: 🇭🇰香港HKT05|移动优化
+  server: dafeizhu.xxxyun.top
+  port: 55102
+  udp: true
+  type: anytls
+  uuid: 21fb35b7-8720-464f-82b4-1d91bd3d039a
+  sni: atlhk2.jueduibupao.top
+  skip-cert-verify: false
+  password: 21fb35b7-8720-464f-82b4-1d91bd3d039a
+- name: 🇭🇰香港HKT07|v6入口
+  server: shouzhuzhu.niubifast.cc
+  port: 45102
+  udp: true
+  type: anytls
+  uuid: 21fb35b7-8720-464f-82b4-1d91bd3d039a
+  sni: atlhk2.jueduibupao.top
+  skip-cert-verify: false
+  password: 21fb35b7-8720-464f-82b4-1d91bd3d039a
+- name: 🇸🇬新加坡01|流媒体解锁|AI|移动优化
+  server: dafeizhu.xxxyun.top
+  port: 55003
+  udp: true
+  type: anytls
+  uuid: 21fb35b7-8720-464f-82b4-1d91bd3d039a
+  sni: atlsg1.jueduibupao.top
+  skip-cert-verify: false
+  password: 21fb35b7-8720-464f-82b4-1d91bd3d039a
+- name: 🇸🇬新加坡03|流媒体解锁|AI|v6入口
+  server: shouzhuzhu.niubifast.cc
+  port: 45003
+  udp: true
+  type: anytls
+  uuid: 21fb35b7-8720-464f-82b4-1d91bd3d039a
+  sni: atlsg1.jueduibupao.top
+  skip-cert-verify: false
+  password: 21fb35b7-8720-464f-82b4-1d91bd3d039a
+- name: 🇯🇵日本01|流媒体解锁|AI|移动优化
+  server: dafeizhu.xxxyun.top
+  port: 55004
+  udp: true
+  type: anytls
+  uuid: 21fb35b7-8720-464f-82b4-1d91bd3d039a
+  sni: atljp1.jueduibupao.top
+  skip-cert-verify: false
+  password: 21fb35b7-8720-464f-82b4-1d91bd3d039a
+- name: 🇰🇷韩国01|家宽
+  server: dafeizhu.xxxyun.top
+  port: 55014
+  udp: true
+  type: anytls
+  uuid: 21fb35b7-8720-464f-82b4-1d91bd3d039a
+  sni: atlkr1.jueduibupao.top
+  skip-cert-verify: false
+  password: 21fb35b7-8720-464f-82b4-1d91bd3d039a
+- name: 🇨🇳台湾01|Google play|AI|移动优化
+  server: dafeizhu.xxxyun.top
+  port: 55005
+  udp: true
+  type: anytls
+  uuid: 21fb35b7-8720-464f-82b4-1d91bd3d039a
+  sni: tw2.jueduibupao.top
+  skip-cert-verify: false
+  password: 21fb35b7-8720-464f-82b4-1d91bd3d039a
+- name: 🇨🇳台湾03|Google play|AI|移动优化
+  server: dafeizhu.xxxyun.top
+  port: 55006
+  udp: true
+  type: anytls
+  uuid: 21fb35b7-8720-464f-82b4-1d91bd3d039a
+  sni: tw3.jueduibupao.top
+  skip-cert-verify: false
+  password: 21fb35b7-8720-464f-82b4-1d91bd3d039a
+- name: 🇺🇸亚特兰大01|流媒体解锁|AI|移动优化
+  server: dafeizhu.xxxyun.top
+  port: 55007
+  udp: true
+  type: anytls
+  uuid: 21fb35b7-8720-464f-82b4-1d91bd3d039a
+  sni: atlus1.jueduibupao.top
+  skip-cert-verify: false
+  password: 21fb35b7-8720-464f-82b4-1d91bd3d039a
+- name: 🇺🇸凤凰城03|流媒体解锁|AI|移动优化
+  server: dafeizhu.xxxyun.top
+  port: 55008
+  udp: true
+  type: anytls
+  uuid: 21fb35b7-8720-464f-82b4-1d91bd3d039a
+  sni: atlus2.jueduibupao.top
+  skip-cert-verify: false
+  password: 21fb35b7-8720-464f-82b4-1d91bd3d039a
+- name: 🇨🇦加拿大01|流媒体解锁|AI|移动优化
+  server: dafeizhu.xxxyun.top
+  port: 55011
+  udp: true
+  type: anytls
+  uuid: 21fb35b7-8720-464f-82b4-1d91bd3d039a
+  sni: atlca1.jueduibupao.top
+  skip-cert-verify: false
+  password: 21fb35b7-8720-464f-82b4-1d91bd3d039a
+- name: 🇩🇪德国01|移动优化
+  server: dafeizhu.xxxyun.top
+  port: 55009
+  udp: true
+  type: anytls
+  uuid: 21fb35b7-8720-464f-82b4-1d91bd3d039a
+  sni: atlde.jueduibupao.top
+  skip-cert-verify: false
+  password: 21fb35b7-8720-464f-82b4-1d91bd3d039a
+- name: 🇬🇧英国01|流媒体解锁|AI|移动优化
+  server: dafeizhu.xxxyun.top
+  port: 55010
+  udp: true
+  type: anytls
+  uuid: 21fb35b7-8720-464f-82b4-1d91bd3d039a
+  sni: atluk.jueduibupao.top
+  skip-cert-verify: false
+  password: 21fb35b7-8720-464f-82b4-1d91bd3d039a
+- name: 🇰🇷韩国-家宽-流媒体解锁|AI-hy2
+  server: 6bkr1.6bnw.top
+  port: 34801
+  udp: true
+  type: hysteria2
+  password: 21fb35b7-8720-464f-82b4-1d91bd3d039a
+  sni: 6bkr1.6bnw.top
+- name: ❗如果只显示此节点|0.1x
+  type: vmess
+  server: mugen11.6bnw.top
+  port: 8080
+  uuid: 21fb35b7-8720-464f-82b4-1d91bd3d039a
+  alterId: 0
+  cipher: auto
+  udp: true
+  client-fingerprint: chrome
+  network: ws
+  ws-opts:
+    path: /?ed=2560
+    headers:
+      Host: mugen11.6bnw.top
+- name: ❗是客户端太旧导致|0.1x
+  type: vmess
+  server: bestcf.top
+  port: 8080
+  uuid: 21fb35b7-8720-464f-82b4-1d91bd3d039a
+  alterId: 0
+  cipher: auto
+  udp: true
+  client-fingerprint: chrome
+  network: ws
+  ws-opts:
+    path: /?ed=2560
+    headers:
+      Host: buyvmus2.6bnw.top
+- name: ❗请到网站使用教程|0.1x
+  type: vmess
+  server: mugen33.6bnw.top
+  port: 8080
+  uuid: 21fb35b7-8720-464f-82b4-1d91bd3d039a
+  alterId: 0
+  cipher: auto
+  udp: true
+  client-fingerprint: qq
+  network: ws
+  ws-opts:
+    path: /?ed=2560
+    headers:
+      Host: buyvmus2.6bnw.top
+- name: ❗更新一下客户端|0.1x
+  type: vmess
+  server: mugen44.6bnw.top
+  port: 8080
+  uuid: 21fb35b7-8720-464f-82b4-1d91bd3d039a
+  alterId: 0
+  cipher: auto
+  udp: true
+  client-fingerprint: ios
+  network: ws
+  ws-opts:
+    path: /?ed=2560
+    headers:
+      Host: buyvmus2.6bnw.top
+proxy-groups:
+- name: PROXY
+  type: select
+  proxies:
+  - 请看网站公告
+  - 请尽快下载专用客户端使用
+  - 🇸🇬AWS新加坡02|电信优化
+  - 🇸🇬AWS新加坡03|电信优化|流媒体解锁
+  - 🇯🇵AWS日本02|流媒体解锁
+  - 🇰🇷AWS韩国01|流媒体解锁
+  - 🇭🇰香港HKT01|移动优化
+  - 🇭🇰香港HKT03|v6入口
+  - 🇭🇰香港HKT05|移动优化
+  - 🇭🇰香港HKT07|v6入口
+  - 🇸🇬新加坡01|流媒体解锁|AI|移动优化
+  - 🇸🇬新加坡03|流媒体解锁|AI|v6入口
+  - 🇯🇵日本01|流媒体解锁|AI|移动优化
+  - 🇰🇷韩国01|家宽
+  - 🇨🇳台湾01|Google play|AI|移动优化
+  - 🇨🇳台湾03|Google play|AI|移动优化
+  - 🇺🇸亚特兰大01|流媒体解锁|AI|移动优化
+  - 🇺🇸凤凰城03|流媒体解锁|AI|移动优化
+  - 🇨🇦加拿大01|流媒体解锁|AI|移动优化
+  - 🇩🇪德国01|移动优化
+  - 🇬🇧英国01|流媒体解锁|AI|移动优化
+  - 🇰🇷韩国-家宽-流媒体解锁|AI-hy2
+  - ❗如果只显示此节点|0.1x
+  - ❗是客户端太旧导致|0.1x
+  - ❗请到网站使用教程|0.1x
+  - ❗更新一下客户端|0.1x
+  - AUTO
+- name: AUTO
+  type: url-test
+  url: http://www.gstatic.com/generate_204
+  interval: 300
+  proxies:
+  - 请看网站公告
+  - 请尽快下载专用客户端使用
+  - 🇸🇬AWS新加坡02|电信优化
+  - 🇸🇬AWS新加坡03|电信优化|流媒体解锁
+  - 🇯🇵AWS日本02|流媒体解锁
+  - 🇰🇷AWS韩国01|流媒体解锁
+  - 🇭🇰香港HKT01|移动优化
+  - 🇭🇰香港HKT03|v6入口
+  - 🇭🇰香港HKT05|移动优化
+  - 🇭🇰香港HKT07|v6入口
+  - 🇸🇬新加坡01|流媒体解锁|AI|移动优化
+  - 🇸🇬新加坡03|流媒体解锁|AI|v6入口
+  - 🇯🇵日本01|流媒体解锁|AI|移动优化
+  - 🇰🇷韩国01|家宽
+  - 🇨🇳台湾01|Google play|AI|移动优化
+  - 🇨🇳台湾03|Google play|AI|移动优化
+  - 🇺🇸亚特兰大01|流媒体解锁|AI|移动优化
+  - 🇺🇸凤凰城03|流媒体解锁|AI|移动优化
+  - 🇨🇦加拿大01|流媒体解锁|AI|移动优化
+  - 🇩🇪德国01|移动优化
+  - 🇬🇧英国01|流媒体解锁|AI|移动优化
+  - 🇰🇷韩国-家宽-流媒体解锁|AI-hy2
+  - ❗如果只显示此节点|0.1x
+  - ❗是客户端太旧导致|0.1x
+  - ❗请到网站使用教程|0.1x
+  - ❗更新一下客户端|0.1x
+rules:
+- IP-CIDR,10.0.0.0/8,DIRECT,no-resolve
+- IP-CIDR,172.16.0.0/12,DIRECT,no-resolve
+- IP-CIDR,192.168.0.0/16,DIRECT,no-resolve
+- IP-CIDR,127.0.0.0/8,DIRECT,no-resolve
+- GEOIP,CN,DIRECT
+- MATCH,PROXY
