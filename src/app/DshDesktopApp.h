@@ -20,15 +20,12 @@ QT_END_NAMESPACE
 
 #include "../backend/Backend.h"
 #include "../theme/ThemeWatcher.h"
+#include "../updater/UpdatePlan.h"
 #include "../util/Logger.h"
 #include "AboutDialog.h"
 #include "DshWindow.h"
 #include "LogViewer.h"
 #include "TrayController.h"
-
-namespace dsh::updater {
-struct Status;
-}
 
 namespace dsh::app {
 
@@ -62,7 +59,7 @@ public:
 
 private:
     void onCheckUpdates(bool silent = false);
-    void finishUpdateCheck(const dsh::updater::Status& status, bool silent);
+    void finishUpdateCheck(const dsh::updater::UpdatePlan& plan, bool silent);
     void onPerformUpdate();
     void onRestartDesktop();   // 重启 DSH Desktop：重新拉起应用并退出
     void onStartBackend();     // 启动后台服务
@@ -79,6 +76,12 @@ private:
     void performQuit(bool stopBackground);
     void onSecondInstance();
     static QString singleInstanceSocketPath();
+
+    /// 桌面自更新接管：拉起已安装的 ``dsh-desktop-updater``（带当前 PID /
+    /// 下载包路径 / 目标二进制 / SHA-256 与安全安装前缀），释放单实例锁并
+    /// 退出且不停止后台服务。助手不可用（缺失 / 不可执行）时返回 ``false``，
+    /// 且**不替换任何文件**。
+    bool launchDesktopSelfUpdate(const QString& sourcePath, const QString& sha256);
 
     /// 桌面端当前能否管理后台服务生命周期（External / ``Unmanaged`` /
     /// 不可管理时为 false）。

@@ -68,6 +68,9 @@ ComponentUpdate desktopComponent(const DesktopVersionResult& desktop) {
     ComponentUpdate out;
     out.component = UpdateComponent::Desktop;
     out.source = kDesktopSource;
+    // 携带检查时解析出的发布信息（含附件），后续桌面更新即可据此选择下载资产，
+    // 避免在对话框中重新联网、避免目标版本漂移。
+    out.release = desktop.release;
 
     switch (desktop.status) {
         case VersionCheckStatus::Ok:
@@ -133,6 +136,33 @@ QVector<UpdateComponent> UpdatePlan::defaultSelected() const {
 
 QVector<UpdateComponent> UpdatePlan::orderedAvailable() const {
     return defaultSelected();
+}
+
+QString componentLabel(UpdateComponent component) {
+    switch (component) {
+        case UpdateComponent::Backend:
+            return QStringLiteral("DSH 后台服务");
+        case UpdateComponent::Desktop:
+            return QStringLiteral("DSH Desktop");
+    }
+    return QString();
+}
+
+QString componentDetail(const ComponentUpdate& component) {
+    switch (component.state) {
+        case ComponentState::Available:
+            return QStringLiteral("当前 %1 → 最新 %2（%3）")
+                .arg(component.current.isEmpty() ? QStringLiteral("未知") : component.current,
+                     component.target, component.source);
+        case ComponentState::Current:
+            return QStringLiteral("%1（已是最新版本；来源：%2）")
+                .arg(component.target, component.source);
+        case ComponentState::Unavailable:
+            return QStringLiteral("更新不可用（%1）").arg(component.source);
+        case ComponentState::Invalid:
+            return QStringLiteral("无法检查更新（%1）").arg(component.source);
+    }
+    return QString();
 }
 
 }  // namespace dsh::updater

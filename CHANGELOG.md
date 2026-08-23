@@ -4,6 +4,23 @@ DSH Desktop 所有重要变更都记录在此。版本遵循 [语义化版本](h
 
 ## [Unreleased]
 
+### 新增
+- **统一更新流程**：启动 / 后台更新检查改为在工作线程同时执行后端（npm、
+  `Updater::check`）与桌面（Gitee、`DesktopVersionChecker::check` 使用生成的
+  `DSH_DESKTOP_VERSION`）两个来源的检查，经 `UpdatePlan::combine` 合并后决定
+  托盘可见性与对话框内容：
+  - 托盘在任一组件可更新时显示**唯一**的 `更新到最新版` 动作。
+  - `UpdateDialog` 重构为接收 `UpdatePlan`：同时展示后端 / 桌面两个组件，
+    复选框默认勾选 `defaultSelected()`，目标版本锁定（含来源标签），
+    操作用不定量进度条（不伪造百分比）。
+  - 更新串行执行、后端优先：后端复用 `Updater` 的异步提权更新；桌面用
+    `DesktopReleaseDownloader` 下载选中资产，校验 SHA-256 后拉起已安装的
+    `dsh-desktop-updater`（携带当前 PID / source / destination / sha256 /
+    install-prefix），释放单实例锁并退出且不停止后台服务。
+  - 桌面资产或助手不可用时显示明确失败，且不替换任何文件。
+- `UpdatePlan` 新增 `componentLabel` / `componentDetail` 纯函数（供对话框展示），
+  并让 `ComponentUpdate` 携带桌面发布信息（含附件），避免下载时二次联网。
+
 ### 变更
 - **托盘菜单重构**：把 `重启桌面` 拆分为 `重启 DSH Desktop`（用
   `QProcess::startDetached` 重新拉起当前可执行文件并退出，不停止后台服务）

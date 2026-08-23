@@ -50,10 +50,13 @@ struct ComponentUpdate {
     QString current;            // 当前版本；桌面端为空串表示计划未知该版本
     QString target;             // 目标（最新）版本；桌面端为 release tag
     QString source;             // 版本来源（如 npm 注册表、Gitee 发布）
+    DesktopReleaseInfo release; // 仅桌面组件：检查时解析出的发布信息（含附件），
+                                // 供后续下载选中资产；后端组件恒为默认值。
 
     bool operator==(const ComponentUpdate& o) const {
         return component == o.component && state == o.state
-            && current == o.current && target == o.target && source == o.source;
+            && current == o.current && target == o.target && source == o.source
+            && release == o.release;
     }
     bool operator!=(const ComponentUpdate& o) const { return !(*this == o); }
 };
@@ -98,5 +101,13 @@ ComponentUpdate backendComponent(const Status& backend);
 /// \return 状态为 Ok 且有更新 -> Available；Ok 且无更新 -> Current；
 ///         NoRelease -> Unavailable；Offline/InvalidResponse -> Invalid。
 ComponentUpdate desktopComponent(const DesktopVersionResult& desktop);
+
+/// 组件的可读分类名（纯函数）：``后端`` / ``桌面``。
+QString componentLabel(UpdateComponent component);
+
+/// 单个组件的单行人类可读摘要（纯函数），供更新对话框展示。
+/// 例如 ``当前 0.1.0 → 最新 0.1.1（npm 注册表（@deepseek-ai/dsh））``；
+/// 状态为 Current / Unavailable / Invalid 时会附带相应描述。
+QString componentDetail(const ComponentUpdate& component);
 
 }  // namespace dsh::updater

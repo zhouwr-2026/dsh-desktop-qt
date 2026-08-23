@@ -14,12 +14,16 @@
 
 using dsh::updater::ComponentState;
 using dsh::updater::ComponentUpdate;
+using dsh::updater::DesktopReleaseAsset;
+using dsh::updater::DesktopReleaseInfo;
 using dsh::updater::DesktopVersionResult;
 using dsh::updater::Status;
 using dsh::updater::UpdateComponent;
 using dsh::updater::UpdatePlan;
 using dsh::updater::VersionCheckStatus;
 using dsh::updater::backendComponent;
+using dsh::updater::componentDetail;
+using dsh::updater::componentLabel;
 using dsh::updater::desktopComponent;
 
 namespace {
@@ -40,6 +44,16 @@ DesktopVersionResult makeDesktop(VersionCheckStatus status, bool updateAvailable
     r.status = status;
     r.updateAvailable = updateAvailable;
     r.release.tagName = tag;
+    return r;
+}
+
+/// 构造一个携带附件与发布信息的桌面检查结果。
+DesktopVersionResult makeDesktopWithRelease(VersionCheckStatus status, bool updateAvailable,
+                                            const QString& tag,
+                                            const QVector<DesktopReleaseAsset>& assets) {
+    DesktopVersionResult r = makeDesktop(status, updateAvailable, tag);
+    r.release.assets = assets;
+    r.release.name = tag;
     return r;
 }
 
@@ -85,6 +99,15 @@ private slots:
     void trayActionHiddenWhenNoneAvailable();
     void defaultSelectedBackendFirstBothAvailable();
     void defaultSelectedOnlyAvailable();
+    // --- 桌面发布信息携带（用于后续下载） ---
+    void desktopComponentCarriesRelease();
+    void componentUpdateEqualityIncludesRelease();
+    // --- 面向对话框的纯辅助函数 ---
+    void componentLabelValues();
+    void componentDetailAvailable();
+    void componentDetailCurrent();
+    void componentDetailUnavailable();
+    void componentDetailInvalid();
 };
 
 void TestUpdatePlan::backendAvailable() {
@@ -275,6 +298,69 @@ void TestUpdatePlan::defaultSelectedOnlyAvailable() {
     QCOMPARE(selected.at(0), UpdateComponent::Desktop);
 
     verifyStates(plan, ComponentState::Current, ComponentState::Available);
+}
+
+void TestUpdatePlan::desktopComponentCarriesRelease() {
+    // 桌面检查结果携带发布信息（含附件）时，映射后的组件应原样带出，供下载使用。
+    DesktopReleaseAsset asset;
+    asset.name = QStringLiteral("dsh-desktop-0.2.0.AppImage");
+    asset.url = QStringLiteral("https://gitee.com/eruditeLoong/asset");
+    asset.size = 12345678;
+    const DesktopVersionResult result = makeDesktopWithRelease(
+        VersionCheckStatus::Ok, true, QStringLiteral("v0.2.0"), {asset});
+
+    const ComponentUpdate u = desktopComponent(result);
+    QCOMPARE(u.component, UpdateComponent::Desktop);
+    QCOMPARE(u.state, ComponentState::Available);
+    QCOMPARE(u.release.tagName, QStringLiteral("v0.2.0"));
+    QCOMPARE(u.release.assets.size(), 1);
+    QCOMPARE(u.release.assets[0].name, QStringLiteral("dsh-desktop-0.2.0.AppImage"));
+    QCOMPARE(u.release.assets[0].size, qint64(12345678));
+}
+
+void TestUpdatePlan::componentUpdateEqualityIncludesRelease() {
+    // ``ComponentUpdate`` 的相等性必须包含发布信息，避免静默丢失下载来源。
+    DesktopReleaseAsset asset;
+    asset.name = QStringLiteral("x.AppImage");
+    asset.url = QStringLiteral("https://gitee.com/x/y");
+    asset.size = 1;
+    const ComponentUpdate a = desktopComponent(makeDesktopWithRelease(
+        VersionCheckStatus::Ok, true, QStringLiteral("v1.0.0"), {asset}));
+    const ComponentUpdate b = desktopComponent(makeDesktopWithRelease(
+        VersionCheckStatus::Ok, true, QStringLiteral("v1.0.0"), {{asset.name, asset.url, 2}}));
+    QVERIFY(a == a);
+    QVERIFY(a != b);
+}
+
+void TestUpdatePlan::componentLabelValues() {
+    QCOMPARE(componentLabel(UpdateComponent::Backend), QStringLiteral("DSH 后台服务"));
+    QCOMPARE(componentLabel(UpdateComponent::Desktop), QStringLiteral("DSH Desktop"));
+}
+
+void TestUpdatePlan::componentDetailAvailable() {
+    const ComponentUpdate u = backendComponent(
+        makeBackend(QStringLiteral("1.0.0"), QStringLiteral("1.1.0"), true));
+    const QString detail = componentDetail(u);
+    QVERIFY(detail.contains(QStringLiteral("1.0.0")));
+    QVERIFY(detail.contains(QStringLiteral("1.1.0")));
+    QVERIFY(detail.contains(QStringLiteral("npm")));
+}
+
+void TestUpdatePlan::componentDetailCurrent() {
+    const ComponentUpdate u = backendComponent(
+        makeBackend(QStringLiteral("1.1.0"), QStringLiteral("1.1.0"), false));
+    QVERIFY(componentDetail(u).contains(QStringLiteral("已是最新版本")));
+}
+
+void TestUpdatePlan::componentDetailUnavailable() {
+    const ComponentUpdate u = backendComponent(
+        makeBackend(QString(), QStringLiteral("1.1.0"), false));
+    QVERIFY(componentDetail(u).contains(QStringLiteral("更新不可用")));
+}
+
+void TestUpdatePlan::componentDetailInvalid() {
+    const ComponentUpdate u = backendComponent(makeBackend(QString(), QString(), false));
+    QVERIFY(componentDetail(u).contains(QStringLiteral("无法检查更新")));
 }
 
 QTEST_GUILESS_MAIN(TestUpdatePlan)

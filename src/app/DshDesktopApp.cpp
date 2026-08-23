@@ -3,7 +3,9 @@
 #include "DshDesktopApp.h"
 
 #include "../icon/IconLoader.h"
+#include "../updater/DesktopVersionChecker.h"
 #include "../updater/Updater.h"
+#include "BuildVersion.h"
 #include "ExitDialog.h"
 #include "UpdateDialog.h"
 
@@ -408,48 +410,118 @@ void DshDesktopApp::onCheckUpdates(bool silent) {
     }
     updateCheckInProgress_ = true;
     logger_.log(QStringLiteral("托盘：检查更新中（silent=%1）…").arg(silent ? "yes" : "no"));
+
+    // 后台与桌面两个来源分别检查，均在工作线程完成，避免阻塞 GUI。桌面本地
+    // 版本使用 CMake 生成的 DSH_DESKTOP_VERSION。
     QPointer<DshDesktopApp> self(this);
-    QThread* thread = QThread::create([self, silent]() {
-        const auto status = dsh::updater::Updater::check(8);
+    const QString localVersion = QString::fromLatin1(DSH_DESKTOP_VERSION);
+    QThread* thread = QThread::create([self, silent, localVersion]() {
+        const dsh::updater::Status backendStatus =
+            dsh::updater::Updater::check(8);
+        const dsh::updater::DesktopVersionResult desktopResult =
+            dsh::updater::DesktopVersionChecker::check(localVersion, 8);
         if (!self) return;
-        QMetaObject::invokeMethod(self, [self, status, silent]() {
-            if (self) self->finishUpdateCheck(status, silent);
+        // 合并为统一更新计划：后端优先，桌面随后。
+        const dsh::updater::UpdatePlan plan =
+            dsh::updater::UpdatePlan::combine(backendStatus, desktopResult);
+        QMetaObject::invokeMethod(self, [self, plan, silent]() {
+            if (self) self->finishUpdateCheck(plan, silent);
         }, Qt::QueuedConnection);
     });
     connect(thread, &QThread::finished, thread, &QObject::deleteLater);
     thread->start();
 }
 
-void DshDesktopApp::finishUpdateCheck(const dsh::updater::Status& status, bool silent) {
+void DshDesktopApp::finishUpdateCheck(const dsh::updater::UpdatePlan& plan, bool silent) {
     updateCheckInProgress_ = false;
-    if (status.updateAvailable) {
-        updateAvailable_ = true;
-        tray_->setUpdateAvailable(true);
+
+    // 统一的托盘动作可见性：任一组件可更新则显示唯一的"更新到最新版"。
+    const bool hasUpdate = plan.trayActionVisible();
+    updateAvailable_ = hasUpdate;
+    tray_->setUpdateAvailable(hasUpdate);
+
+    if (hasUpdate) {
         if (silent) {
-            // 后台模式：只弹 KDE 通知，不打断用户
+            // 后台模式：只弹 KDE 通知，不打断用户。
+            QStringList parts;
+            for (const dsh::updater::ComponentUpdate& update : plan.components()) {
+                if (update.state != dsh::updater::ComponentState::Available) continue;
+                parts.append(QStringLiteral("%1：当前 %2 → 最新 %3")
+                                 .arg(dsh::updater::componentLabel(update.component),
+                                      update.current.isEmpty() ? tr("未知") : update.current,
+                                      update.target));
+            }
             dsh::util::notify(
                 QStringLiteral("DSH 有新版本可用"),
-                QStringLiteral("当前 %1 → 最新 %2，点击托盘菜单的『更新到最新版』升级。")
-                    .arg(status.current, status.latest),
+                QStringLiteral("%1。点击托盘菜单的『更新到最新版』升级。")
+                    .arg(parts.join(tr("；"))),
                 QStringLiteral("normal"),
                 QStringLiteral("dialog-information"),
                 8000);
         } else {
-            UpdateDialog dlg(status, window_);
+            UpdateDialog dlg(plan, window_, [this](const QString& source,
+                                                   const QString& sha256) {
+                return launchDesktopSelfUpdate(source, sha256);
+            });
             dlg.exec();
         }
-    } else {
-        updateAvailable_ = false;
-        tray_->setUpdateAvailable(false);
-        if (!silent) {
-            UpdateDialog dlg(status, window_);
-            dlg.exec();
-        }
+    } else if (!silent) {
+        // 手动检查且无更新：仍显示对话框，向用户说明当前均为最新。
+        UpdateDialog dlg(plan, window_);
+        dlg.exec();
     }
 }
 
 void DshDesktopApp::onPerformUpdate() {
     onCheckUpdates(false);
+}
+
+bool DshDesktopApp::launchDesktopSelfUpdate(const QString& sourcePath,
+                                            const QString& sha256) {
+    logger_.log(QStringLiteral("桌面自更新接管：source=%1 sha256=%2")
+                    .arg(sourcePath, sha256));
+
+    // 定位与当前可执行同目录的 dsh-desktop-updater 助手（两者一起安装到
+    // ${CMAKE_INSTALL_BINDIR}）。助手缺失或不可执行时明确失败，不替换任何文件。
+    const QString helper =
+        QCoreApplication::applicationDirPath() + QStringLiteral("/dsh-desktop-updater");
+    const QFileInfo helperInfo(helper);
+    if (!helperInfo.exists() || !helperInfo.isFile() || !helperInfo.isExecutable()) {
+        logger_.log(QStringLiteral("桌面自更新失败：安装助手不可用（%1）").arg(helper));
+        return false;
+    }
+
+    // 目标即当前正在运行的桌面二进制；安装前缀取二进制所在目录的父目录，
+    // 使目标落在助手 ``validateInstallDestination`` 的可信前缀内。
+    const QString destination = QCoreApplication::applicationFilePath();
+    const QString binDir = QFileInfo(destination).absolutePath();
+    const QString installPrefix = QFileInfo(binDir).absolutePath();
+
+    QStringList args = {
+        QStringLiteral("--pid"), QString::number(QCoreApplication::applicationPid()),
+        QStringLiteral("--source"), sourcePath,
+        QStringLiteral("--destination"), destination,
+        QStringLiteral("--sha256"), sha256,
+        QStringLiteral("--install-prefix"), installPrefix,
+    };
+    logger_.log(QStringLiteral("桌面自更新拉起助手：%1 %2")
+                    .arg(helper, args.join(QLatin1Char(' '))));
+
+    if (!QProcess::startDetached(helper, args)) {
+        logger_.log(QStringLiteral("桌面自更新失败：无法拉起助手 %1").arg(helper));
+        return false;
+    }
+
+    // 助手已接管旧实例退出后的替换：释放单实例锁并退出，**不停止后台服务**。
+    if (singleInstanceServer_) {
+        singleInstanceServer_->close();
+        singleInstanceServer_->deleteLater();
+        singleInstanceServer_ = nullptr;
+        QLocalServer::removeServer(singleInstanceSocketPath());
+    }
+    logger_.log("桌面自更新：已拉起助手，准备退出（不停止后台服务）。");
+    performQuit(false);
+    return true;
 }
 
 bool DshDesktopApp::backendManageable() const {

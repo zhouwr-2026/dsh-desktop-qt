@@ -33,6 +33,11 @@ struct DesktopReleaseAsset {
     QString name;   // 例如 ``dsh-desktop-0.1.0.AppImage``
     QString url;    // ``browser_download_url``
     qint64 size{0}; // 字节数
+
+    bool operator==(const DesktopReleaseAsset& o) const {
+        return name == o.name && url == o.url && size == o.size;
+    }
+    bool operator!=(const DesktopReleaseAsset& o) const { return !(*this == o); }
 };
 
 /// 解析出的一个 Gitee release。
@@ -42,6 +47,12 @@ struct DesktopReleaseInfo {
     QString body;         // ``body``（发布说明）
     bool prerelease{false}; // Gitee ``prerelease`` 标记
     QVector<DesktopReleaseAsset> assets;
+
+    bool operator==(const DesktopReleaseInfo& o) const {
+        return tagName == o.tagName && name == o.name && body == o.body
+            && prerelease == o.prerelease && assets == o.assets;
+    }
+    bool operator!=(const DesktopReleaseInfo& o) const { return !(*this == o); }
 };
 
 /// 一次版本检查的完整结果。
