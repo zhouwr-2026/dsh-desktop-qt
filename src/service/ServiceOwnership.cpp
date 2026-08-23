@@ -105,6 +105,16 @@ bool ServiceOwnership::contains(const QString& unitName, ServiceScope scope) con
     return find(unitName, scope, nullptr);
 }
 
+bool ServiceOwnership::removeRecord(const QString& unitName, ServiceScope scope) {
+    for (int i = 0; i < records_.size(); ++i) {
+        if (records_.at(i).unitName == unitName && records_.at(i).scope == scope) {
+            records_.removeAt(i);
+            return true;  // 调用方随后 save() 持久化。
+        }
+    }
+    return false;
+}
+
 bool ServiceOwnership::load() {
     QFile file(stateFilePath_);
     if (!file.exists()) {

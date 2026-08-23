@@ -116,6 +116,10 @@ public:
     /// 是否存在该 unit+scope 的所有权记录。
     bool contains(const QString& unitName, ServiceScope scope) const;
 
+    /// 移除该 unit+scope 的所有权记录（卸载后清理状态）。存在并移除成功返回
+    /// true；不存在返回 false，内存与状态文件均不变。
+    bool removeRecord(const QString& unitName, ServiceScope scope);
+
     /// 当前全部记录（拷贝）。
     QVector<OwnedServiceRecord> records() const { return records_; }
 

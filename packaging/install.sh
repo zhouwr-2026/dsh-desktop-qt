@@ -184,32 +184,17 @@ configure_theme_export() {
 
 uninstall() {
   log "卸载 DSH Desktop"
-  # 系统级文件
-  rm -f /usr/bin/dsh-desktop
-  rm -f /usr/share/applications/dsh-desktop.desktop
-  rm -f /usr/local/share/applications/dsh-desktop.desktop
-  rm -f /etc/xdg/autostart/dsh-desktop.desktop
-  rm -f /usr/share/polkit-1/actions/org.dsh.desktop.policy
-  systemctl disable --now dsh-theme-export.path 2>/dev/null || true
-  rm -f /usr/lib/systemd/system/dsh-theme-export.path
-  rm -f /usr/lib/systemd/system/dsh-theme-export.service
-  rm -f /usr/lib/dsh-desktop/dsh-theme-export
-  rm -f /run/dsh-desktop/theme
-  systemctl daemon-reload
-  rm -f /usr/share/icons/hicolor/scalable/apps/dsh-whale-black.svg
-  rm -f /usr/share/icons/hicolor/scalable/apps/dsh-whale-white.svg
-  # 旧版本曾生成 hicolor PNG 位图变体（现已改为仅 SVG），卸载时一并清理。
-  for size in 22 32 48 64 128 256; do
-    rm -f "/usr/share/icons/hicolor/${size}x${size}/apps/dsh-whale-black.png"
-    rm -f "/usr/share/icons/hicolor/${size}x${size}/apps/dsh-whale-white.png"
-  done
-  for size in 16 22 24 32 48 64; do
-    rm -f "/usr/share/icons/breeze/apps/$size/dsh-whale.svg"
-    rm -f "/usr/share/icons/breeze-dark/apps/$size/dsh-whale.svg"
-  done
-  # 单实例 socket 残留
-  rm -f /run/user/*/dsh-desktop.sock 2>/dev/null
-  log "卸载完成（用户配置 ~/.config/anywhere-labs/ 与下载缓存 ~/.local/share/dsh-desktop/ 已保留）"
+
+  # 委托给原生卸载器：它只按 UninstallPlan 决策，用 QFile/QDir 显式删除桌面端
+  # 产物；后台 unit/数据仅在计划允许时移除，官方服务与用户数据默认保留。
+  # 交给原生卸载器显示复选框；默认不勾选后台服务，勾选后还需二次确认。
+  local uninstaller="/usr/bin/dsh-desktop-uninstaller"
+  if [[ ! -x "$uninstaller" ]]; then
+    die "找不到卸载器 $uninstaller，请先重新安装或检查安装路径"
+  fi
+  "$uninstaller" --prefix /usr
+
+  log "卸载完成（用户配置 ~/.config/anywhere-labs/、下载缓存 ~/.local/share/dsh-desktop/ 等已保留；后台 DSH 服务默认保留）"
 }
 
 # ---- 主流程 ----

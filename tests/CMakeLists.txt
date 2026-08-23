@@ -168,6 +168,29 @@ target_include_directories(dsh-uninstall-plan-test PRIVATE
 )
 add_test(NAME uninstall-plan COMMAND dsh-uninstall-plan-test)
 
+# 卸载执行器测试：纯文件操作（Qt Core），用临时目录注入布局，绝不触碰真实
+# /usr //etc /systemd；验证「仅按 UninstallPlan 允许时移除后台 unit、官方默认
+# 保留、只用 QFile/QDir」。
+add_executable(dsh-uninstaller-test test_uninstaller.cpp)
+target_link_libraries(dsh-uninstaller-test PRIVATE
+    Qt6::Core Qt6::Test dsh_desktop_core
+)
+target_include_directories(dsh-uninstaller-test PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src
+)
+add_test(NAME uninstaller COMMAND dsh-uninstaller-test)
+
+# 卸载对话框测试：控件默认状态 + 纯决策辅助，需 offscreen 平台。
+add_executable(dsh-uninstall-dialog-test test_uninstall_dialog.cpp)
+target_link_libraries(dsh-uninstall-dialog-test PRIVATE
+    Qt6::Core Qt6::Gui Qt6::Widgets Qt6::Test dsh_desktop_core
+)
+target_include_directories(dsh-uninstall-dialog-test PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src
+)
+add_test(NAME uninstall-dialog COMMAND dsh-uninstall-dialog-test)
+set_tests_properties(uninstall-dialog PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+
 # 自更新助手测试：纯校验/原子替换逻辑，仅依赖 Qt Core + 助手静态库。
 add_executable(dsh-update-helper-test test_update_helper.cpp)
 target_link_libraries(dsh-update-helper-test PRIVATE

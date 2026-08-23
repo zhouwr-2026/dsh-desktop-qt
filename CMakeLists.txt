@@ -89,6 +89,7 @@ set(DSH_CORE_SOURCES
     src/service/DshServiceManager.cpp
     src/service/InstallationPlan.cpp
     src/service/UninstallPlan.cpp
+    src/service/Uninstaller.cpp
     src/updater/Updater.cpp
     src/updater/DesktopVersionChecker.cpp
     src/updater/DesktopReleaseDownloader.cpp
@@ -98,6 +99,7 @@ set(DSH_CORE_SOURCES
     src/app/ExitDialog.cpp
     src/app/UpdateDialog.cpp
     src/app/AboutDialog.cpp
+    src/app/UninstallDialog.cpp
     src/app/LogViewer.cpp
     src/app/TrayController.cpp
     src/app/DshWindow.cpp
@@ -122,6 +124,7 @@ set(DSH_CORE_HEADERS
     src/service/DshServiceManager.h
     src/service/InstallationPlan.h
     src/service/UninstallPlan.h
+    src/service/Uninstaller.h
     src/updater/Updater.h
     src/updater/DesktopVersionChecker.h
     src/updater/DesktopReleaseDownloader.h
@@ -131,6 +134,7 @@ set(DSH_CORE_HEADERS
     src/app/ExitDialog.h
     src/app/UpdateDialog.h
     src/app/AboutDialog.h
+    src/app/UninstallDialog.h
     src/app/LogViewer.h
     src/app/TrayController.h
     src/app/DshWindow.h
@@ -212,6 +216,24 @@ target_compile_options(dsh-desktop-updater PRIVATE
 )
 
 # ---------------------------------------------------------------------------
+# 卸载器 CLI：原生对话框 + 按 UninstallPlan 显式 QFile/QDir 删除。复用
+# dsh_desktop_core（UninstallPlan / ServiceOwnership / ServiceDiscovery /
+# DshServiceManager / UninstallDialog）。
+# ---------------------------------------------------------------------------
+add_executable(dsh-desktop-uninstaller
+    src/service/UninstallerMain.cpp
+)
+target_include_directories(dsh-desktop-uninstaller PRIVATE
+    ${DSH_DESKTOP_GENERATED_DIR}
+)
+target_link_libraries(dsh-desktop-uninstaller PRIVATE
+    dsh_desktop_core
+)
+target_compile_options(dsh-desktop-uninstaller PRIVATE
+    $<$<CXX_COMPILER_ID:GNU,Clang>:-Wall -Wextra -Wpedantic -Wshadow>
+)
+
+# ---------------------------------------------------------------------------
 # 安装
 # ---------------------------------------------------------------------------
 
@@ -220,6 +242,9 @@ install(TARGETS dsh-desktop
     RUNTIME DESTINATION "${CMAKE_INSTALL_BINDIR}"
 )
 install(TARGETS dsh-desktop-updater
+    RUNTIME DESTINATION "${CMAKE_INSTALL_BINDIR}"
+)
+install(TARGETS dsh-desktop-uninstaller
     RUNTIME DESTINATION "${CMAKE_INSTALL_BINDIR}"
 )
 install(FILES packaging/dsh-desktop.desktop
