@@ -55,4 +55,8 @@ private:
 /// \return 负 / 零 / 正，类似 ``strcmp``。
 int compareVersions(const QString& a, const QString& b);
 
+/// 判断字符串是否为严格 SemVer 2.0 版本（允许可选 v 前缀）。
+/// 复用内部 ``parseSemVer``，与 ``compareVersions`` 共享同一套判定逻辑。
+bool isValidSemVer(const QString& version);
+
 }  // namespace dsh::updater

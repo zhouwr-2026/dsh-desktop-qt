@@ -16,6 +16,15 @@ target_include_directories(dsh-semver-test PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/../src
 )
 
+# 桌面版本检查器测试：纯解析逻辑，不触发网络；仅依赖 Qt Core + core 库
+add_executable(dsh-desktop-version-test test_desktop_version_checker.cpp)
+target_link_libraries(dsh-desktop-version-test PRIVATE
+    Qt6::Core Qt6::Test dsh_desktop_core
+)
+target_include_directories(dsh-desktop-version-test PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src
+)
+
 # loopback 测试：需要 Widgets + WebEngine（QWebEngineProfile 间接依赖）
 add_executable(dsh-loopback-test test_loopback_page.cpp)
 target_link_libraries(dsh-loopback-test PRIVATE
@@ -49,6 +58,7 @@ target_include_directories(dsh-logo-test PRIVATE
 )
 
 add_test(NAME semver          COMMAND dsh-semver-test)
+add_test(NAME desktop-version COMMAND dsh-desktop-version-test)
 add_test(NAME loopback        COMMAND dsh-loopback-test)
 add_test(NAME session-export  COMMAND dsh-session-export-test)
 add_test(NAME logo            COMMAND dsh-logo-test)

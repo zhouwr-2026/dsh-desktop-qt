@@ -274,3 +274,8 @@ int dsh::updater::compareVersions(const QString& a, const QString& b) {
     if (!parseSemVer(a, pa) || !parseSemVer(b, pb)) return 0;
     return compareSemVer(pa, pb);
 }
+
+bool dsh::updater::isValidSemVer(const QString& version) {
+    ParsedSemVer parsed;
+    return parseSemVer(version, parsed);
+}
