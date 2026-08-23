@@ -179,9 +179,10 @@ DSH-Desktop/
 │   └── icons.qrc
 ├── tests/                       # Qt Test
 ├── packaging/                   # PKGBUILD + .desktop + install.sh
-├── legacy_py/                   # 旧 Python 实现（保留参考）
-├── scripts/
+├── scripts/                    # 开发与端到端验证脚本
 │   └── smoke.sh                 # 端到端冒烟
+├── docs/                       # 设计方案与开发文档
+│   └── DSH-DESKTOP-SERVICE-PLAN.zh.md
 ├── README.md
 └── README.zh.md
 ```

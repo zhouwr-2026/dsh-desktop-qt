@@ -1,7 +1,0 @@
-# Clash Verge local proxy — 127.0.0.1:7897 (本机 Clash Verge Rev, 2026-08-21 改写)
-export http_proxy="http://127.0.0.1:7897"
-export https_proxy="http://127.0.0.1:7897"
-export ftp_proxy="http://127.0.0.1:7897"
-export all_proxy="socks5://127.0.0.1:7897"
-# Keep LAN / loopback / metadata services direct (avoid proxy loops & broken local DNS)
-export no_proxy="localhost,127.0.0.1,::1,10.0.0.0/8,172.16.0.0/12,192.168.0.0/16,.local,.internal"
