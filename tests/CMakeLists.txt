@@ -113,3 +113,14 @@ target_include_directories(dsh-update-plan-test PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/../src
 )
 add_test(NAME update-plan COMMAND dsh-update-plan-test)
+
+# ServiceUnitBuilder 测试：纯 Qt Core，校验 dsh web 单元文本生成、非法输入
+# 拒绝与 systemd 安全转义；不触发文件/进程操作。
+add_executable(dsh-service-unit-test test_service_unit_builder.cpp)
+target_link_libraries(dsh-service-unit-test PRIVATE
+    Qt6::Core Qt6::Test dsh_desktop_core
+)
+target_include_directories(dsh-service-unit-test PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src
+)
+add_test(NAME service-unit COMMAND dsh-service-unit-test)

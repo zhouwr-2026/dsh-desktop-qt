@@ -71,6 +71,7 @@ set(DSH_CORE_SOURCES
     src/service/SystemctlShowParser.cpp
     src/service/ServiceDiscovery.cpp
     src/service/ServiceOwnership.cpp
+    src/service/ServiceUnitBuilder.cpp
     src/updater/Updater.cpp
     src/updater/DesktopVersionChecker.cpp
     src/updater/UpdatePlan.cpp
@@ -98,6 +99,7 @@ set(DSH_CORE_HEADERS
     src/service/SystemctlShowParser.h
     src/service/ServiceDiscovery.h
     src/service/ServiceOwnership.h
+    src/service/ServiceUnitBuilder.h
     src/updater/Updater.h
     src/updater/DesktopVersionChecker.h
     src/updater/UpdatePlan.h
