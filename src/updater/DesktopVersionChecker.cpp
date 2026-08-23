@@ -2,6 +2,8 @@
 // @author zhouwr
 #include "DesktopVersionChecker.h"
 
+#include "BuildVersion.h"
+
 #include <QEventLoop>
 #include <QJsonArray>
 #include <QJsonDocument>
@@ -140,7 +142,7 @@ DesktopVersionResult DesktopVersionChecker::fetchLatestRelease(int timeoutSecond
     const QUrl url = QUrl::fromEncoded(latestReleaseUrl().toUtf8());
     QNetworkRequest request(url);
     request.setRawHeader("Accept", "application/json");
-    request.setRawHeader("User-Agent", "dsh-desktop/0.1 (Qt6)");
+    request.setRawHeader("User-Agent", "dsh-desktop/" DSH_DESKTOP_VERSION " (Qt6)");
 
     QNetworkReply* reply = nam.get(request);
     QTimer timer;

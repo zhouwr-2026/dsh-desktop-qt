@@ -42,6 +42,24 @@ void openExternal(const QUrl& url) {
     }
 }
 
+// 设置/清除 WebEngine 的 ForceDarkMode 属性，让 Chromium 在暗色主题下
+// 反色渲染浅色网页，并让 ``prefers-color-scheme`` 媒体查询返回 dark。
+//
+// ``QWebEngineSettings::ForceDarkMode`` 需要 Qt 6.7 才存在，而项目的
+// CMake 声明的最低版本是 Qt 6.5，因此这里用版本宏做编译期保护。
+//
+// 回退行为（Qt 6.5 / 6.6）：该属性不存在，无法让 Chromium 强制反色；此
+// 函数退化为无害空操作，DSH Web UI 自身的暗色样式仍会随主题切换，缺的
+// 仅是 Chromium 侧的系统级反色渲染。
+void applyForceDarkMode(QWebEngineSettings* settings, bool dark) {
+#if QT_VERSION >= QT_VERSION_CHECK(6, 7, 0)
+    settings->setAttribute(QWebEngineSettings::ForceDarkMode, dark);
+#else
+    Q_UNUSED(settings);
+    Q_UNUSED(dark);
+#endif
+}
+
 }  // namespace
 
 DshWindow::DshWindow(const QString& url,
@@ -75,8 +93,8 @@ DshWindow::DshWindow(const QString& url,
     // 暗色主题下让 Chromium 也渲染暗色（DSH Web UI 页面不再白底）。
     // ForceDarkMode 会让 Chromium 反色渲染浅色网页，并让
     // ``prefers-color-scheme`` 媒体查询返回 dark。
-    settings->setAttribute(QWebEngineSettings::ForceDarkMode,
-                           theme_ && theme_->current() == "dark");
+    // （见 applyForceDarkMode 的版本说明：Qt < 6.7 时为无害空操作。）
+    applyForceDarkMode(settings, theme_ && theme_->current() == "dark");
 
     contentStack_ = new QStackedWidget(this);
     createStartupPage();
@@ -385,6 +403,11 @@ void DshWindow::onApplicationLoadFinished(bool success) {
 
 void DshWindow::onThemeChanged(const QString& scheme) {
     // 暗色模式切换：更新 Chromium 渲染后重载页面，让 DSH Web UI 跟随。
+    //
+    // QWebEngineSettings::ForceDarkMode 需要 Qt 6.7 才有。在 Qt 6.5/6.6 上
+    // 没有该属性（见 applyForceDarkMode 的说明），此处退化为不做什么，避免
+    // 使用不存在的枚举导致编译失败。
+#if QT_VERSION >= QT_VERSION_CHECK(6, 7, 0)
     if (profile_ && view_) {
         const bool dark = (scheme == "dark");
         auto settings = profile_->settings();
@@ -396,6 +419,9 @@ void DshWindow::onThemeChanged(const QString& scheme) {
             view_->reload();
         }
     }
+#else
+    Q_UNUSED(scheme);
+#endif
 }
 
 }  // namespace dsh::app

@@ -144,3 +144,23 @@ target_include_directories(dsh-update-helper-test PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/../src
 )
 add_test(NAME update-helper COMMAND dsh-update-helper-test)
+
+# 桌面发布附件下载器测试：纯函数（资产选择 / URL 校验 / 文件名净化 /
+# 缓存路径存取），仅依赖 Qt Core + Network + 核心库，不触发网络。
+add_executable(dsh-release-downloader-test test_desktop_release_downloader.cpp)
+target_link_libraries(dsh-release-downloader-test PRIVATE
+    Qt6::Core Qt6::Network Qt6::Test dsh_desktop_core
+)
+target_include_directories(dsh-release-downloader-test PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src
+)
+add_test(NAME release-downloader COMMAND dsh-release-downloader-test)
+
+# 构建版本头测试：编译期引用 CMake 生成的 BuildVersion.h（含 DSH_DESKTOP_VERSION），
+# 运行期校验其为非空且合法的 SemVer。
+add_executable(dsh-build-version-test test_build_version.cpp)
+target_link_libraries(dsh-build-version-test PRIVATE
+    Qt6::Core Qt6::Test dsh_desktop_core
+)
+# BuildVersion.h 通过 dsh_desktop_core 的 PUBLIC include 目录暴露，无需额外路径。
+add_test(NAME build-version COMMAND dsh-build-version-test)

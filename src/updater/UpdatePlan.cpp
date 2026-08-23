@@ -20,7 +20,19 @@ ComponentUpdate backendComponent(const Status& backend) {
     out.target = backend.latest;
     out.source = kBackendSource;
 
+    // 把"版本是否已知且为合法 SemVer"预先判定好，供各处复用。
+    const bool currentKnown = !backend.current.isEmpty()
+        && isValidSemVer(backend.current);
+    const bool targetKnown = !backend.latest.isEmpty()
+        && isValidSemVer(backend.latest);
+
     if (backend.updateAvailable) {
+        // 声称可更新必须有据可依：current 与 latest 都必须是已知的合法
+        // SemVer。若其中一个为空或非法，说明检查结果自相矛盾，视为不可用。
+        if (!currentKnown || !targetKnown) {
+            out.state = ComponentState::Invalid;
+            return out;
+        }
         out.state = ComponentState::Available;
         return out;
     }
@@ -42,7 +54,7 @@ ComponentUpdate backendComponent(const Status& backend) {
     }
 
     // current 与 latest 均非空：若任一非法 SemVer，则结果不可用。
-    if (!isValidSemVer(backend.current) || !isValidSemVer(backend.latest)) {
+    if (!currentKnown || !targetKnown) {
         out.state = ComponentState::Invalid;
         return out;
     }
@@ -60,6 +72,13 @@ ComponentUpdate desktopComponent(const DesktopVersionResult& desktop) {
     switch (desktop.status) {
         case VersionCheckStatus::Ok:
             out.target = desktop.release.tagName;
+            // Ok 仅仅是"响应可解析"；还必须保证发布 tag 存在且是合法 SemVer。
+            // 缺失或非法 tag 说明响应不完整/不可信，一律视为不可用。
+            if (desktop.release.tagName.isEmpty()
+                || !isValidSemVer(desktop.release.tagName)) {
+                out.state = ComponentState::Invalid;
+                break;
+            }
             // Result 不携带桌面本地版本，只有 updateAvailable 这一权威标志：
             // 有更新 -> Available，否则视为已最新。
             out.state = desktop.updateAvailable ? ComponentState::Available

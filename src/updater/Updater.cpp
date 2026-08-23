@@ -2,6 +2,8 @@
 // @author zhouwr
 #include "Updater.h"
 
+#include "BuildVersion.h"
+
 #include <QDir>
 #include <QElapsedTimer>
 #include <QEventLoop>
@@ -160,7 +162,7 @@ QString Updater::fetchLatestVersion(int timeoutSeconds) {
     QObject::connect(&nam, &QNetworkAccessManager::finished, &loop, &QEventLoop::quit);
     QNetworkRequest req(QString::fromLatin1(kRegistry) + QString::fromLatin1(kLatestPath));
     req.setRawHeader("Accept", "application/json");
-    req.setRawHeader("User-Agent", "dsh-desktop/0.1 (Qt6)");
+    req.setRawHeader("User-Agent", "dsh-desktop/" DSH_DESKTOP_VERSION " (Qt6)");
     QNetworkReply* reply = nam.get(req);
     QTimer timer;
     timer.setSingleShot(true);

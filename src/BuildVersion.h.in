@@ -1,0 +1,12 @@
+// SPDX-License-Identifier: MIT
+// @author zhouwr
+//
+// 由 CMake 在配置阶段根据 ``project(... VERSION ...)`` 的 ``PROJECT_VERSION``
+// 自动生成对应的 ``BuildVersion.h``（位于构建目录下）。**请勿手工修改本文件**；
+// 每次 ``cmake`` 重新配置都会通过 ``configure_file`` 将其重写为新的头文件，
+// 从而让主程序、自更新助手、About 对话框与 User-Agent 版本串保持单一事实来源。
+
+#pragma once
+
+/// DSH Desktop 的完整版本号（来自 CMake ``PROJECT_VERSION``）。
+#define DSH_DESKTOP_VERSION "@PROJECT_VERSION@"

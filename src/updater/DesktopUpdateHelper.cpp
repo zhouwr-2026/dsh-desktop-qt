@@ -14,6 +14,7 @@
 #include <QFile>
 #include <QFileInfo>
 #include <QRandomGenerator>
+#include <QRegularExpression>
 
 #include <cstdio>   // std::rename
 #include <cstring>  // std::strerror
@@ -107,6 +108,29 @@ void fsyncDirectory(const QString& dirPath) {
         ::fsync(fd);
         ::close(fd);
     }
+}
+
+/// 返回"尽力规范化"的绝对路径：文件存在时用 ``canonicalFilePath``（解析符号
+/// 链接与 ``..``）；否则对父目录 canonical 后拼接文件名，最后以 ``cleanPath``
+/// 兜底。用于把（可能尚不存在的）替换目标与可信前缀放到同一坐标系比较。
+QString normalizedAbsolutePath(const QString& path) {
+    const QFileInfo info(path);
+    if (info.exists()) {
+        const QString canon = info.canonicalFilePath();
+        if (!canon.isEmpty()) return canon;
+    }
+    const QFileInfo parentInfo(info.absolutePath());
+    const QString parentCanon = parentInfo.canonicalFilePath();
+    const QString base = QFileInfo(info.absoluteFilePath()).fileName();
+    if (!parentCanon.isEmpty()) {
+        return parentCanon + QLatin1Char('/') + base;
+    }
+    return QDir::cleanPath(info.absoluteFilePath());
+}
+
+/// 两条路径经 ``normalizedAbsolutePath`` 后是否相等。
+bool pathsEqual(const QString& a, const QString& b) {
+    return normalizedAbsolutePath(a) == normalizedAbsolutePath(b);
 }
 
 }  // namespace
@@ -237,6 +261,129 @@ bool validateDestination(const QString& destination, QString* error) {
     return true;
 }
 
+bool isPathWithinPrefix(const QString& path, const QString& prefix,
+                        QString* error) {
+    if (path.isEmpty() || prefix.isEmpty()) {
+        setError(error, QStringLiteral("路径或前缀为空"));
+        return false;
+    }
+    const QString normPath = normalizedAbsolutePath(path);
+    const QString normPrefix = normalizedAbsolutePath(prefix);
+    // 明确把根前缀 "/" 当作信任整个文件系统（管理员显式选择）。
+    if (normPrefix == QLatin1String("/")) {
+        return true;
+    }
+    const bool equal = (normPath == normPrefix);
+    const bool nested = normPath.startsWith(normPrefix + QLatin1Char('/'));
+    if (!equal && !nested) {
+        setError(error, QStringLiteral("路径不在允许的前缀内：%1（前缀 %2）")
+                            .arg(path, prefix));
+        return false;
+    }
+    return true;
+}
+
+bool validateInstallDestination(const QString& destination,
+                                const QString& installedBinary,
+                                const QString& trustedPrefix,
+                                QString* error) {
+    QString err;
+    if (!validateDestination(destination, &err)) {
+        setError(error, err);
+        return false;
+    }
+
+    // 只允许：等于已知桌面二进制，或位于可信安装前缀之内。
+    const bool isInstalledBinary =
+        !installedBinary.isEmpty() && pathsEqual(destination, installedBinary);
+    const bool inPrefix =
+        !trustedPrefix.isEmpty() &&
+        isPathWithinPrefix(destination, trustedPrefix, nullptr);
+    if (!isInstalledBinary && !inPrefix) {
+        setError(error, QStringLiteral("目标不在允许的自更新范围内：%1")
+                            .arg(destination));
+        return false;
+    }
+
+    // 目标若已存在，校验文件主与当前有效用户一致（尽力而为）。
+    const QFileInfo destInfo(QFileInfo(destination).absoluteFilePath());
+    if (destInfo.exists()) {
+        const uint fileOwner = destInfo.ownerId();
+        const uint euid = static_cast<uint>(::geteuid());
+        if (fileOwner != euid) {
+            setError(error, QStringLiteral("目标文件主（uid %1）与当前用户（uid %2）"
+                                           "不一致：%3")
+                                .arg(fileOwner)
+                                .arg(euid)
+                                .arg(destination));
+            return false;
+        }
+    }
+    return true;
+}
+
+bool recoverOrphanedDshUpdateFiles(const QString& directory, QString* error) {
+    if (directory.isEmpty()) {
+        setError(error, QStringLiteral("目录为空"));
+        return false;
+    }
+    const QFileInfo dirInfo(directory);
+    if (!dirInfo.exists() || !dirInfo.isDir()) {
+        setError(error, QStringLiteral("目录不存在或不是目录：%1").arg(directory));
+        return false;
+    }
+
+    // 匹配 ``.dsh-update-<base>.<kind>-<pid>-<rand>``，kind ∈ {bak, tmp}。
+    static const QRegularExpression kOrphanPattern(
+        QStringLiteral("^\\.dsh-update-(.+)\\.(bak|tmp)-(\\d+)-(\\d+)$"));
+
+    const QDir dir(directory);
+    const QStringList entries =
+        dir.entryList(QDir::Files | QDir::Hidden | QDir::NoDotAndDotDot);
+    for (const QString& name : entries) {
+        if (!name.startsWith(QStringLiteral(".dsh-update-"))) {
+            continue;
+        }
+        const QRegularExpressionMatch match = kOrphanPattern.match(name);
+        if (!match.hasMatch()) {
+            // 名字不符合本模块约定，不是我们生成的残留文件，不动它。
+            continue;
+        }
+        const QString base = match.captured(1);
+        const QString kind = match.captured(2);
+        const QString entryPath = dir.filePath(name);
+
+        if (kind == QStringLiteral("bak")) {
+            const QString originalPath = dir.filePath(base);
+            if (QFileInfo(originalPath).exists()) {
+                // 新文件已就位，备份已过时——删除。
+                if (!QFile::remove(entryPath)) {
+                    setError(error, QStringLiteral("无法删除过时备份：%1")
+                                        .arg(entryPath));
+                    return false;
+                }
+            } else {
+                // 原目标缺失，把备份恢复回原名。
+                if (std::rename(QFile::encodeName(entryPath).constData(),
+                                QFile::encodeName(originalPath).constData()) != 0) {
+                    const int errNo = errno;
+                    setError(error, QStringLiteral("无法恢复更新备份：%1 -> %2 (%3)")
+                                        .arg(entryPath, originalPath,
+                                             strerrorText(errNo)));
+                    return false;
+                }
+            }
+        } else {  // tmp —— 未完成的临时写入，一律删除。
+            if (!QFile::remove(entryPath)) {
+                setError(error, QStringLiteral("无法清理临时更新文件：%1")
+                                    .arg(entryPath));
+                return false;
+            }
+        }
+    }
+    return true;
+}
+
 bool atomicReplace(const QString& source, const QString& destination,
                    QString* error) {
     QString err;
@@ -295,9 +442,23 @@ bool atomicReplace(const QString& source, const QString& destination,
                     QFile::encodeName(absDest).constData()) != 0) {
         const int errNo = errno;
         if (destExisted) {
-            std::rename(QFile::encodeName(backupPath).constData(),
-                        QFile::encodeName(absDest).constData());
+            // 回滚：把备份文件 rename 回目标路径。若回滚也失败，则目标可能
+            // 缺失（原文件仍躺在备份路径上），必须明确报告备份所在位置，
+            // 否则现场会留下"目标缺失但备份无人知晓"的危险状态。
+            if (std::rename(QFile::encodeName(backupPath).constData(),
+                            QFile::encodeName(absDest).constData()) != 0) {
+                const int rollbackErr = errno;
+                QFile::remove(tempPath);
+                setError(
+                    error,
+                    QStringLiteral("无法把新文件放入目标位置：%1 (%2)；"
+                                   "且恢复备份失败：目标可能缺失，原文件备份位于 %3 (%4)")
+                        .arg(absDest, strerrorText(errNo),
+                             backupPath, strerrorText(rollbackErr)));
+                return false;
+            }
         }
+        // 回滚成功（或目标原本就不存在）：临时新文件已无用，删除之。
         QFile::remove(tempPath);
         setError(error, QStringLiteral("无法把新文件放入目标位置：%1 (%2)")
                             .arg(absDest, strerrorText(errNo)));
@@ -306,7 +467,15 @@ bool atomicReplace(const QString& source, const QString& destination,
 
     // 5. 成功：丢弃备份文件，并尽力刷盘目录元数据。
     if (destExisted) {
-        QFile::remove(backupPath);
+        // 替换已成功；若备份清理失败，不能把调用方当成"替换失败"（替换不可逆地
+        // 已经成功），因此在返回 ``true`` 的前提下通过 ``error`` 附上诊断，
+        // 避免遗留备份文件造成的磁盘占用与现场混乱被静默吞掉。
+        if (!QFile::remove(backupPath)) {
+            fsyncDirectory(destDir);
+            setError(error, QStringLiteral("替换成功，但无法删除备份文件：%1")
+                                .arg(backupPath));
+            return true;
+        }
     }
     fsyncDirectory(destDir);
     return true;

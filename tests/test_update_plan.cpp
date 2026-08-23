@@ -65,12 +65,18 @@ private slots:
     void backendInvalidOffline();
     void backendInvalidNothingKnown();
     void backendInvalidSemver();
+    void backendInvalidUpdateAvailableNothingKnown();
+    void backendInvalidUpdateAvailableEmptyCurrent();
+    void backendInvalidUpdateAvailableEmptyTarget();
+    void backendInvalidUpdateAvailableInvalidSemver();
     // --- 桌面映射（纯函数） ---
     void desktopAvailable();
     void desktopCurrent();
     void desktopUnavailableNoRelease();
     void desktopInvalidOffline();
     void desktopInvalidResponse();
+    void desktopInvalidOkMissingTag();
+    void desktopInvalidOkInvalidTag();
     // --- 合并计划 ---
     void combineComponentsOrderBackendFirst();
     void trayActionVisibleWhenBackendAvailable();
@@ -124,6 +130,34 @@ void TestUpdatePlan::backendInvalidSemver() {
     QCOMPARE(u.state, ComponentState::Invalid);
 }
 
+void TestUpdatePlan::backendInvalidUpdateAvailableNothingKnown() {
+    // updateAvailable 声称可更新，但当前与目标版本都为空——自相矛盾。
+    const ComponentUpdate u = backendComponent(
+        makeBackend(QString(), QString(), true));
+    QCOMPARE(u.state, ComponentState::Invalid);
+}
+
+void TestUpdatePlan::backendInvalidUpdateAvailableEmptyCurrent() {
+    // updateAvailable 声称可更新，但当前版本为空（未安装）——自相矛盾。
+    const ComponentUpdate u = backendComponent(
+        makeBackend(QString(), QStringLiteral("1.1.0"), true));
+    QCOMPARE(u.state, ComponentState::Invalid);
+}
+
+void TestUpdatePlan::backendInvalidUpdateAvailableEmptyTarget() {
+    // updateAvailable 声称可更新，但目标版本为空（离线）——自相矛盾。
+    const ComponentUpdate u = backendComponent(
+        makeBackend(QStringLiteral("1.0.0"), QString(), true));
+    QCOMPARE(u.state, ComponentState::Invalid);
+}
+
+void TestUpdatePlan::backendInvalidUpdateAvailableInvalidSemver() {
+    // updateAvailable 声称可更新，但当前版本非法 SemVer——自相矛盾。
+    const ComponentUpdate u = backendComponent(
+        makeBackend(QStringLiteral("garbage"), QStringLiteral("1.1.0"), true));
+    QCOMPARE(u.state, ComponentState::Invalid);
+}
+
 void TestUpdatePlan::desktopAvailable() {
     const ComponentUpdate u = desktopComponent(
         makeDesktop(VersionCheckStatus::Ok, true, QStringLiteral("v1.2.3")));
@@ -155,6 +189,20 @@ void TestUpdatePlan::desktopInvalidOffline() {
 void TestUpdatePlan::desktopInvalidResponse() {
     const ComponentUpdate u = desktopComponent(
         makeDesktop(VersionCheckStatus::InvalidResponse, false));
+    QCOMPARE(u.state, ComponentState::Invalid);
+}
+
+void TestUpdatePlan::desktopInvalidOkMissingTag() {
+    // Ok 但缺 tag：响应不完整，即使声称可更新也不可信。
+    const ComponentUpdate u = desktopComponent(
+        makeDesktop(VersionCheckStatus::Ok, true, QString()));
+    QCOMPARE(u.state, ComponentState::Invalid);
+}
+
+void TestUpdatePlan::desktopInvalidOkInvalidTag() {
+    // Ok 但 tag 非法 SemVer：不应视为可更新。
+    const ComponentUpdate u = desktopComponent(
+        makeDesktop(VersionCheckStatus::Ok, true, QStringLiteral("not-a-version")));
     QCOMPARE(u.state, ComponentState::Invalid);
 }
 

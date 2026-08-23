@@ -11,6 +11,21 @@ DSH Desktop 所有重要变更都记录在此。版本遵循 [语义化版本](h
   `停止后台服务`），三者与其它菜单项用分隔符隔开。
 - 后台服务动作遵循 External / Unmanaged / 可管理状态：仅在后端可管理时启用，
   停止前弹原生确认，操作结果写入日志并刷新菜单启用状态。
+- **自更新助手加固**（`DesktopUpdateHelper`）：
+  - 新增 `validateInstallDestination`：目标必须等于已安装桌面二进制，或位于
+    可信安装前缀之内；目标已存在时校验文件主与当前有效用户一致（尽力而为）。
+  - 新增 `recoverOrphanedDshUpdateFiles`：启动时清理上次更新崩溃留下的孤儿
+    `.dsh-update-*.bak-*` / `.dsh-update-*.tmp-*` 文件（备份在原目标缺失时恢复，
+    否则删除；临时文件一律删除）。
+  - `dsh-desktop-updater` CLI 改用上述校验，并新增可选 `--install-prefix`。
+- **图标资源改为纯 SVG**：
+  - `packaging/install.sh` 不再用 `rsvg-convert` 生成可选 PNG 位图（仅安装 SVG）；
+  - canonical SVG 统一以 `assets/dsh-whale-{black,white}.svg` 为唯一来源，
+    删除 `packaging/` 下重复的 SVG；CMake 安装与 QRC 引用保持不变。
+- **`ForceDarkMode` 编译期保护**：`DshWindow` 对
+  `QWebEngineSettings::ForceDarkMode`（Qt 6.7 起提供）加 `QT_VERSION` 宏保护；
+  项目最低版本为 Qt 6.5，在 6.5/6.6 上退化为不强制 Chromium 反色（详见
+  `applyForceDarkMode` 注释）。
 
 ## [0.1.0] - 2026-08-21
 
@@ -161,7 +176,7 @@ DSH Desktop 所有重要变更都记录在此。版本遵循 [语义化版本](h
 
 ### Round 15 — QWebEngine 页面跟随暗色主题
 - 问题：暗色主题下 DSH Web 页面仍渲染白色
-- 修复：`DshWindow` 设置 `QWebEngineSettings::ForceDarkMode`（Qt 6.11 支持）
+- 修复：`DshWindow` 设置 `QWebEngineSettings::ForceDarkMode`（Qt 6.7 起提供）
   - 暗色主题 → true（Chromium 强制暗色渲染 + `prefers-color-scheme: dark`）
   - 亮色主题 → false
 - 主题动态切换时更新属性 + `view_->reload()` 应用

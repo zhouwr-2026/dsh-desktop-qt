@@ -2,6 +2,8 @@
 // @author zhouwr
 #include "AboutDialog.h"
 
+#include "BuildVersion.h"
+
 #include <QApplication>
 #include <QDialogButtonBox>
 #include <QLabel>
@@ -33,7 +35,7 @@ AboutDialog::AboutDialog(QWidget* parent) : QDialog(parent) {
     body->setOpenExternalLinks(true);
     body->setHtml(QStringLiteral(
         "<p style='text-align:center;'>"
-        "<b>版本：</b>0.1.0"
+        "<b>版本：</b>%1"
         "&nbsp;·&nbsp;<b>作者：</b>zhouwr"
         "</p>"
         "<p style='text-align:center;'>"
@@ -54,7 +56,7 @@ AboutDialog::AboutDialog(QWidget* parent) : QDialog(parent) {
         "• 外部链接拦截：自动用系统默认浏览器打开<br/>"
         "• 启动失败诊断、单实例锁、XDG 标准下载路径、自启动集成</p>"
         "<p style='font-size:small;color:gray;'>许可协议：MIT</p>"
-    ));
+    ).arg(QString::fromLatin1(DSH_DESKTOP_VERSION)));
     layout->addWidget(body);
 
     auto* buttons = new QDialogButtonBox(QDialogButtonBox::Close);

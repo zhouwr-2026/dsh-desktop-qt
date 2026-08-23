@@ -9,7 +9,7 @@
 #   1. 用 pacman 装齐运行时依赖（PyQt 已不需要——本版本是 C++/Qt6 原生）
 #   2. 用 npm 装 dsh CLI（如已装则跳过）
 #   3. cmake 构建并 ninja install 到 /usr
-#   4. 注册黑白鲸鱼 SVG + PNG 到 hicolor 图标主题
+#   4. 注册黑白鲸鱼 SVG 到 hicolor / Breeze 图标主题（仅 SVG，无量位图 PNG）
 #   5. 若 dsh-web.service 已存在则启用并启动
 
 set -euo pipefail
@@ -76,22 +76,13 @@ install_artifacts() {
 }
 
 install_icons() {
-  log "注册黑白鲸鱼图标"
+  log "注册黑白鲸鱼 SVG 图标"
+  # 仅安装 SVG；canonical 单一来源位于 assets/（与 CMake 安装与 QRC 一致）。
+  # 不再用 rsvg-convert 生成可选 PNG 位图变体。
   local icon_dir="/usr/share/icons/hicolor/scalable/apps"
   mkdir -p "$icon_dir"
-  cp -f "$ROOT/packaging/dsh-whale-black.svg" "$icon_dir/dsh-whale-black.svg"
-  cp -f "$ROOT/packaging/dsh-whale-white.svg" "$icon_dir/dsh-whale-white.svg"
-
-  for size in 22 32 48 64 128 256; do
-    local out_dir="/usr/share/icons/hicolor/${size}x${size}/apps"
-    mkdir -p "$out_dir"
-    if command -v rsvg-convert >/dev/null 2>&1; then
-      rsvg-convert -w "$size" -h "$size" "$ROOT/packaging/dsh-whale-black.svg" \
-        > "$out_dir/dsh-whale-black.png"
-      rsvg-convert -w "$size" -h "$size" "$ROOT/packaging/dsh-whale-white.svg" \
-        > "$out_dir/dsh-whale-white.png"
-    fi
-  done
+  cp -f "$ROOT/assets/dsh-whale-black.svg" "$icon_dir/dsh-whale-black.svg"
+  cp -f "$ROOT/assets/dsh-whale-white.svg" "$icon_dir/dsh-whale-white.svg"
 
   # KWin/Plasma 使用 .desktop 的 dsh-whale 名称：Breeze 下映射黑鲸鱼，
   # Breeze Dark 下映射白鲸鱼。两套主题使用同一名称才能动态切换。
@@ -161,6 +152,7 @@ uninstall() {
   systemctl daemon-reload
   rm -f /usr/share/icons/hicolor/scalable/apps/dsh-whale-black.svg
   rm -f /usr/share/icons/hicolor/scalable/apps/dsh-whale-white.svg
+  # 旧版本曾生成 hicolor PNG 位图变体（现已改为仅 SVG），卸载时一并清理。
   for size in 22 32 48 64 128 256; do
     rm -f "/usr/share/icons/hicolor/${size}x${size}/apps/dsh-whale-black.png"
     rm -f "/usr/share/icons/hicolor/${size}x${size}/apps/dsh-whale-white.png"

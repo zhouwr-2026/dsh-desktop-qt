@@ -20,6 +20,19 @@ project(dsh-desktop
 )
 
 # ---------------------------------------------------------------------------
+# 构建版本
+# ---------------------------------------------------------------------------
+
+# 由 PROJECT_VERSION 生成版本头（含 DSH_DESKTOP_VERSION 宏），供主程序、
+# 自更新助手、About 对话框与 User-Agent 版本串共用同一来源。
+set(DSH_DESKTOP_GENERATED_DIR "${CMAKE_CURRENT_BINARY_DIR}/generated")
+configure_file(
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/BuildVersion.h.in
+    ${DSH_DESKTOP_GENERATED_DIR}/BuildVersion.h
+    @ONLY
+)
+
+# ---------------------------------------------------------------------------
 # 编译选项
 # ---------------------------------------------------------------------------
 
@@ -75,6 +88,7 @@ set(DSH_CORE_SOURCES
     src/service/InstallationPlan.cpp
     src/updater/Updater.cpp
     src/updater/DesktopVersionChecker.cpp
+    src/updater/DesktopReleaseDownloader.cpp
     src/updater/UpdatePlan.cpp
     src/web/LoopbackWebPage.cpp
     src/web/DownloadInterceptor.cpp
@@ -104,6 +118,7 @@ set(DSH_CORE_HEADERS
     src/service/InstallationPlan.h
     src/updater/Updater.h
     src/updater/DesktopVersionChecker.h
+    src/updater/DesktopReleaseDownloader.h
     src/updater/UpdatePlan.h
     src/web/LoopbackWebPage.h
     src/web/DownloadInterceptor.h
@@ -120,6 +135,7 @@ set(DSH_CORE_HEADERS
 add_library(dsh_desktop_core STATIC ${DSH_CORE_SOURCES} ${DSH_CORE_HEADERS})
 target_include_directories(dsh_desktop_core PUBLIC
     ${CMAKE_CURRENT_SOURCE_DIR}/src
+    ${DSH_DESKTOP_GENERATED_DIR}
 )
 target_link_libraries(dsh_desktop_core PUBLIC
     Qt6::Core
@@ -177,6 +193,9 @@ target_compile_options(dsh_desktop_updater_helper PRIVATE
 # 独立自更新助手 CLI：由旧实例退出前拉起，等待 PID 退出 -> 校验 -> 原子替换。
 add_executable(dsh-desktop-updater
     src/updater/DesktopUpdateHelperMain.cpp
+)
+target_include_directories(dsh-desktop-updater PRIVATE
+    ${DSH_DESKTOP_GENERATED_DIR}
 )
 target_link_libraries(dsh-desktop-updater PRIVATE
     dsh_desktop_updater_helper

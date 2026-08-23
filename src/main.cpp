@@ -7,6 +7,8 @@
 #include "app/DshDesktopApp.h"
 #include "platform/RenderingPolicy.h"
 
+#include "BuildVersion.h"
+
 #include <QApplication>
 #include <QCommandLineParser>
 #include <QCoreApplication>
@@ -27,7 +29,7 @@ int main(int argc, char* argv[]) {
     qInitResources_icons();
     QCoreApplication::setOrganizationName(QStringLiteral("anywhere-labs"));
     QCoreApplication::setApplicationName(QStringLiteral("dsh-desktop"));
-    QCoreApplication::setApplicationVersion(QStringLiteral("0.1.0"));
+    QCoreApplication::setApplicationVersion(QString::fromLatin1(DSH_DESKTOP_VERSION));
 
     // xrdp/Xvnc 等 X11 服务可能不提供可用的 GLX/DRI3。必须在
     // QApplication 和 QtWebEngine 初始化前切到软件渲染，否则 Chromium

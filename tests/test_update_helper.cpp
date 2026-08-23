@@ -21,8 +21,11 @@
 
 using dsh::updater::atomicReplace;
 using dsh::updater::computeSha256;
+using dsh::updater::isPathWithinPrefix;
 using dsh::updater::isValidSha256Hex;
+using dsh::updater::recoverOrphanedDshUpdateFiles;
 using dsh::updater::validateDestination;
+using dsh::updater::validateInstallDestination;
 using dsh::updater::validateSource;
 using dsh::updater::verifySha256;
 
@@ -86,10 +89,36 @@ private slots:
     void validateDestinationMissingParent();
     void validateDestinationOk();
 
+    // --- 前缀包含 ---
+    void isPathWithinPrefixInside();
+    void isPathWithinPrefixEqual();
+    void isPathWithinPrefixOutside();
+    void isPathWithinPrefixSiblingText();
+    void isPathWithinPrefixEmpty();
+
+    // --- 安装目标安全约束 ---
+    void validateInstallDestinationWithinPrefix();
+    void validateInstallDestinationInstalledBinary();
+    void validateInstallDestinationOutsideRejected();
+    void validateInstallDestinationDirectory();
+    void validateInstallDestinationFreshInstall();
+
+    // --- 孤儿更新文件恢复 ---
+    void recoverOrphanedBackupRestoresMissing();
+    void recoverOrphanedBackupRemovedWhenOriginalExists();
+    void recoverOrphanedTmpRemoved();
+    void recoverOrphanedIgnoresUnrelated();
+    void recoverOrphanedMissingDir();
+
     // --- 原子替换 ---
     void atomicReplacePreservesPermissions();
     void atomicReplaceFreshInstall();
     void atomicReplaceInvalidDestination();
+    void atomicReplaceInvalidSourceMissing();
+    void atomicReplaceInvalidSourceNotExecutable();
+    void atomicReplaceInvalidSourceDirectory();
+    void atomicReplaceInvalidDestinationEmpty();
+    void atomicReplaceSuccessCleansUpArtifacts();
 };
 
 void TestUpdateHelper::sha256KnownVector() {
@@ -265,6 +294,207 @@ void TestUpdateHelper::validateDestinationOk() {
     QVERIFY(err.isEmpty());
 }
 
+void TestUpdateHelper::isPathWithinPrefixInside() {
+    QTemporaryDir dir;
+    QVERIFY(dir.isValid());
+    const QString prefix = dir.filePath(QStringLiteral("prefix"));
+    QVERIFY(QDir().mkpath(prefix));
+    const QString dest = prefix + QStringLiteral("/bin/dsh-desktop");
+    QString err;
+    QVERIFY2(isPathWithinPrefix(dest, prefix, &err), qPrintable(err));
+    QVERIFY(err.isEmpty());
+}
+
+void TestUpdateHelper::isPathWithinPrefixEqual() {
+    QTemporaryDir dir;
+    QVERIFY(dir.isValid());
+    const QString prefix = dir.filePath(QStringLiteral("prefix"));
+    QVERIFY(QDir().mkpath(prefix));
+    QString err;
+    QVERIFY2(isPathWithinPrefix(prefix, prefix, &err), qPrintable(err));
+}
+
+void TestUpdateHelper::isPathWithinPrefixOutside() {
+    QTemporaryDir dir;
+    QVERIFY(dir.isValid());
+    const QString prefix = dir.filePath(QStringLiteral("prefix"));
+    QVERIFY(QDir().mkpath(prefix));
+    const QString other = dir.filePath(QStringLiteral("other"));
+    QVERIFY(QDir().mkpath(other));
+    const QString dest = other + QStringLiteral("/app");
+    QString err;
+    QVERIFY(!isPathWithinPrefix(dest, prefix, &err));
+    QVERIFY(!err.isEmpty());
+}
+
+void TestUpdateHelper::isPathWithinPrefixSiblingText() {
+    QTemporaryDir dir;
+    QVERIFY(dir.isValid());
+    // 以同一字面前缀开头但在前缀之外的路径（/usr 与 /usr-evil 的边界）。
+    const QString prefix = dir.filePath(QStringLiteral("prefix"));
+    QVERIFY(QDir().mkpath(prefix));
+    const QString sibling = dir.filePath(QStringLiteral("prefixEvil"));
+    QVERIFY(QDir().mkpath(sibling));
+    const QString dest = sibling + QStringLiteral("/bin/x");
+    QString err;
+    QVERIFY(!isPathWithinPrefix(dest, prefix, &err));
+    QVERIFY(!err.isEmpty());
+}
+
+void TestUpdateHelper::isPathWithinPrefixEmpty() {
+    QString err;
+    QVERIFY(!isPathWithinPrefix(QString(), QStringLiteral("/usr"), &err));
+    QVERIFY(!err.isEmpty());
+    err.clear();
+    QVERIFY(!isPathWithinPrefix(QStringLiteral("/usr/bin/dsh-desktop"), QString(), &err));
+    QVERIFY(!err.isEmpty());
+}
+
+void TestUpdateHelper::validateInstallDestinationWithinPrefix() {
+    QTemporaryDir dir;
+    QVERIFY(dir.isValid());
+    const QString prefix = dir.filePath(QStringLiteral("prefix"));
+    QVERIFY(QDir().mkpath(prefix + QStringLiteral("/bin")));
+    // 目标尚不存在，但位于可信前缀内（全新安装路径，父目录已存在）。
+    const QString dest = prefix + QStringLiteral("/bin/dsh-desktop");
+    QString err;
+    QVERIFY2(validateInstallDestination(dest, QString(), prefix, &err), qPrintable(err));
+    QVERIFY(err.isEmpty());
+}
+
+void TestUpdateHelper::validateInstallDestinationInstalledBinary() {
+    QTemporaryDir dir;
+    QVERIFY(dir.isValid());
+    const QString prefix = dir.filePath(QStringLiteral("prefix"));
+    QVERIFY(QDir().mkpath(prefix + QStringLiteral("/bin")));
+    const QString dest = prefix + QStringLiteral("/bin/dsh-desktop");
+    QVERIFY(writeFile(dest, "installed binary"));
+    // installedBinary 指向目标本身：即使不在前缀内也放行（文件主与当前用户一致）。
+    QString err;
+    QVERIFY2(validateInstallDestination(dest, dest, QString(), &err), qPrintable(err));
+    QVERIFY(err.isEmpty());
+}
+
+void TestUpdateHelper::validateInstallDestinationOutsideRejected() {
+    QTemporaryDir dir;
+    QVERIFY(dir.isValid());
+    const QString prefix = dir.filePath(QStringLiteral("prefix"));
+    QVERIFY(QDir().mkpath(prefix));
+    const QString other = dir.filePath(QStringLiteral("other"));
+    QVERIFY(QDir().mkpath(other));
+    // 既非已安装二进制，也不在可信前缀内 -> 拒绝。
+    const QString dest = other + QStringLiteral("/dsh-desktop");
+    QString err;
+    QVERIFY(!validateInstallDestination(dest, QString(), prefix, &err));
+    QVERIFY(!err.isEmpty());
+}
+
+void TestUpdateHelper::validateInstallDestinationDirectory() {
+    QTemporaryDir dir;
+    QVERIFY(dir.isValid());
+    const QString prefix = dir.filePath(QStringLiteral("prefix"));
+    QVERIFY(QDir().mkpath(prefix));
+    // 目标是目录 -> 拒绝（基类校验）。
+    QString err;
+    QVERIFY(!validateInstallDestination(prefix, QString(), prefix, &err));
+    QVERIFY(!err.isEmpty());
+}
+
+void TestUpdateHelper::validateInstallDestinationFreshInstall() {
+    QTemporaryDir dir;
+    QVERIFY(dir.isValid());
+    const QString prefix = dir.filePath(QStringLiteral("prefix"));
+    QVERIFY(QDir().mkpath(prefix));
+    // 全新安装：目标位于一个可写但不在可信前缀内的目录 -> 因前缀限制而拒绝。
+    const QString outsideDir = dir.filePath(QStringLiteral("not-under-prefix"));
+    QVERIFY(QDir().mkpath(outsideDir));
+    const QString dest = outsideDir + QStringLiteral("/app");
+    QString err;
+    QVERIFY(!validateInstallDestination(dest, QString(), prefix, &err));
+    QVERIFY(!err.isEmpty());
+}
+
+void TestUpdateHelper::recoverOrphanedBackupRestoresMissing() {
+    QTemporaryDir dir;
+    QVERIFY(dir.isValid());
+    // 模拟崩溃现场：原目标被移走（.bak 存在），新文件未就位 -> 恢复。
+    const QString base = dir.filePath(QStringLiteral("dsh-desktop"));
+    const QString backup = dir.filePath(
+        QStringLiteral(".dsh-update-dsh-desktop.bak-123-456"));
+    QVERIFY(writeFile(base, "original binary"));
+    QVERIFY(writeFile(backup, "original snapshot"));
+    QVERIFY(QFile::remove(base));  // 原目标缺失
+
+    QString err;
+    QVERIFY2(recoverOrphanedDshUpdateFiles(dir.path(), &err), qPrintable(err));
+    QVERIFY(err.isEmpty());
+
+    QFile f(base);
+    QVERIFY(f.open(QIODevice::ReadOnly));
+    QCOMPARE(f.readAll(), QByteArray("original snapshot"));
+    f.close();
+    QVERIFY(!QFileInfo(backup).exists());
+}
+
+void TestUpdateHelper::recoverOrphanedBackupRemovedWhenOriginalExists() {
+    QTemporaryDir dir;
+    QVERIFY(dir.isValid());
+    const QString base = dir.filePath(QStringLiteral("dsh-desktop"));
+    const QString backup = dir.filePath(
+        QStringLiteral(".dsh-update-dsh-desktop.bak-123-456"));
+    QVERIFY(writeFile(base, "new binary already installed"));
+    QVERIFY(writeFile(backup, "old snapshot"));
+
+    QString err;
+    QVERIFY2(recoverOrphanedDshUpdateFiles(dir.path(), &err), qPrintable(err));
+    QVERIFY(err.isEmpty());
+
+    // 新文件已就位，过时备份被删除，且不动新文件。
+    QFile f(base);
+    QVERIFY(f.open(QIODevice::ReadOnly));
+    QCOMPARE(f.readAll(), QByteArray("new binary already installed"));
+    f.close();
+    QVERIFY(!QFileInfo(backup).exists());
+}
+
+void TestUpdateHelper::recoverOrphanedTmpRemoved() {
+    QTemporaryDir dir;
+    QVERIFY(dir.isValid());
+    const QString tmp = dir.filePath(
+        QStringLiteral(".dsh-update-dsh-desktop.tmp-999-777"));
+    QVERIFY(writeFile(tmp, "partial write"));
+
+    QString err;
+    QVERIFY2(recoverOrphanedDshUpdateFiles(dir.path(), &err), qPrintable(err));
+    QVERIFY(err.isEmpty());
+    QVERIFY(!QFileInfo(tmp).exists());
+}
+
+void TestUpdateHelper::recoverOrphanedIgnoresUnrelated() {
+    QTemporaryDir dir;
+    QVERIFY(dir.isValid());
+    const QString keep = dir.filePath(QStringLiteral("dsh-desktop"));
+    // 名字不符合 .dsh-update-<base>.<kind>-<pid>-<rand> 约定，或普通文件 -> 不动。
+    const QString weird = dir.filePath(QStringLiteral(".dsh-update-something"));
+    QVERIFY(writeFile(keep, "keep me"));
+    QVERIFY(writeFile(weird, "unrecognized"));
+
+    QString err;
+    QVERIFY2(recoverOrphanedDshUpdateFiles(dir.path(), &err), qPrintable(err));
+    QVERIFY(err.isEmpty());
+    QVERIFY(QFileInfo(keep).exists());
+    QVERIFY(QFileInfo(weird).exists());
+}
+
+void TestUpdateHelper::recoverOrphanedMissingDir() {
+    QTemporaryDir dir;
+    QVERIFY(dir.isValid());
+    QString err;
+    QVERIFY(!recoverOrphanedDshUpdateFiles(
+        dir.filePath(QStringLiteral("no/such/dir")), &err));
+    QVERIFY(!err.isEmpty());
+}
+
 void TestUpdateHelper::atomicReplacePreservesPermissions() {
     QTemporaryDir dir;
     QVERIFY(dir.isValid());
@@ -335,6 +565,93 @@ void TestUpdateHelper::atomicReplaceInvalidDestination() {
     QString err;
     QVERIFY(!atomicReplace(source, destDir, &err));
     QVERIFY(!err.isEmpty());
+}
+
+void TestUpdateHelper::atomicReplaceInvalidSourceMissing() {
+    QTemporaryDir dir;
+    QVERIFY(dir.isValid());
+
+    const QString source = dir.filePath(QStringLiteral("does-not-exist"));
+    const QString dest = dir.filePath(QStringLiteral("dsh-desktop"));
+    QVERIFY(!QFileInfo(source).exists());
+
+    QString err;
+    QVERIFY(!atomicReplace(source, dest, &err));
+    QVERIFY(!err.isEmpty());
+    // 目标未被触碰。
+    QVERIFY(!QFileInfo(dest).exists());
+}
+
+void TestUpdateHelper::atomicReplaceInvalidSourceNotExecutable() {
+    QTemporaryDir dir;
+    QVERIFY(dir.isValid());
+
+    const QString source = dir.filePath(QStringLiteral("plain.txt"));
+    QVERIFY(writeFile(source, "not executable"));
+
+    const QString dest = dir.filePath(QStringLiteral("dsh-desktop"));
+    QString err;
+    QVERIFY(!atomicReplace(source, dest, &err));
+    QVERIFY(!err.isEmpty());
+    QVERIFY(!QFileInfo(dest).exists());
+}
+
+void TestUpdateHelper::atomicReplaceInvalidSourceDirectory() {
+    QTemporaryDir dir;
+    QVERIFY(dir.isValid());
+
+    const QString source = dir.filePath(QStringLiteral("a-directory"));
+    QVERIFY(QDir().mkpath(source));
+
+    const QString dest = dir.filePath(QStringLiteral("dsh-desktop"));
+    QString err;
+    QVERIFY(!atomicReplace(source, dest, &err));
+    QVERIFY(!err.isEmpty());
+    QVERIFY(!QFileInfo(dest).exists());
+}
+
+void TestUpdateHelper::atomicReplaceInvalidDestinationEmpty() {
+    QTemporaryDir dir;
+    QVERIFY(dir.isValid());
+
+    const QString source = dir.filePath(QStringLiteral("new-app"));
+    QVERIFY(writeFile(source, "x"));
+    makeExecutable(source);
+
+    QString err;
+    QVERIFY(!atomicReplace(source, QString(), &err));
+    QVERIFY(!err.isEmpty());
+}
+
+void TestUpdateHelper::atomicReplaceSuccessCleansUpArtifacts() {
+    QTemporaryDir dir;
+    QVERIFY(dir.isValid());
+
+    const QString dest = dir.filePath(QStringLiteral("dsh-desktop"));
+    const QString source = dir.filePath(QStringLiteral("dsh-desktop-new"));
+
+    QVERIFY(writeFile(dest, "old binary"));
+    makeExecutable(dest);
+    QVERIFY(writeFile(source, "new binary"));
+    makeExecutable(source);
+
+    QString err;
+    QVERIFY2(atomicReplace(source, dest, &err), qPrintable(err));
+    // 正常成功路径：清理无异常，error 必须保持为空（不产生误报诊断）。
+    QVERIFY(err.isEmpty());
+
+    // 内容已替换。
+    QFile f(dest);
+    QVERIFY(f.open(QIODevice::ReadOnly));
+    QCOMPARE(f.readAll(), QByteArray("new binary"));
+    f.close();
+
+    // 临时文件与备份文件都必须被清理，不留任何 .dsh-update-* 残留。
+    const QStringList leftovers = QDir(dir.path()).entryList(
+        {QStringLiteral(".dsh-update-*")},
+        QDir::Files | QDir::Hidden | QDir::NoDotAndDotDot);
+    QVERIFY2(leftovers.isEmpty(),
+             qPrintable(QStringLiteral("存在残留：%1").arg(leftovers.join(QLatin1Char(',')))));
 }
 
 QTEST_GUILESS_MAIN(TestUpdateHelper)

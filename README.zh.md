@@ -177,7 +177,7 @@ DSH-Desktop/
 │   ├── updater/                 # Updater (npm registry + pkexec)
 │   ├── util/                    # Logger / Notify (D-Bus)
 │   └── web/                     # LoopbackWebPage + DownloadInterceptor
-├── assets/                      # 黑白鲸鱼 SVG + PNG（嵌入到二进制）
+├── assets/                      # 黑白鲸鱼 SVG（嵌入到二进制）
 │   └── icons.qrc
 ├── tests/                       # Qt Test
 ├── packaging/                   # PKGBUILD + .desktop + install.sh

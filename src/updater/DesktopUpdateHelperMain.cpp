@@ -4,19 +4,25 @@
 // ``dsh-desktop-updater`` —— DSH Desktop 自更新助手独立可执行文件。
 //
 // 由正在更新的旧实例（或安装器）在退出前拉起，职责单一：
-//   1. 等待旧 PID 退出（有界超时，避免无限挂起）；
-//   2. 校验来源文件与目标路径；
-//   3. 校验来源 SHA-256；
-//   4. 保留目标权限并原子替换；
-//   5. 任何一步失败都以非零退出码 + 清晰的 stderr 说明原因。
+//   1. 启动时恢复上次更新崩溃遗留的孤儿 ``.dsh-update-*.bak/tmp`` 文件；
+//   2. 等待旧 PID 退出（有界超时，避免无限挂起）；
+//   3. 校验来源文件与目标路径（目标须为已安装桌面二进制或位于可信安装前缀内，
+//      且文件主与当前用户一致，见 ``validateInstallDestination``）；
+//   4. 校验来源 SHA-256；
+//   5. 保留目标权限并原子替换；
+//   6. 任何一步失败都以非零退出码 + 清晰的 stderr 说明原因。
 //
 // 刻意不调用 shell、systemctl 或 QProcess —— 自更新助手必须在主程序可能已
 // 损坏的情况下依然可靠，因此这是一个最小依赖（仅 Qt Core）的原生二进。
 
 #include "DesktopUpdateHelper.h"
 
+#include "BuildVersion.h"
+
 #include <QCommandLineParser>
 #include <QCoreApplication>
+#include <QDir>
+#include <QFileInfo>
 #include <QThread>
 
 #include <cerrno>
@@ -26,7 +32,8 @@
 using dsh::updater::atomicReplace;
 using dsh::updater::computeSha256;
 using dsh::updater::isValidSha256Hex;
-using dsh::updater::validateDestination;
+using dsh::updater::recoverOrphanedDshUpdateFiles;
+using dsh::updater::validateInstallDestination;
 using dsh::updater::validateSource;
 using dsh::updater::verifySha256;
 
@@ -73,7 +80,7 @@ void fail(const char* message) {
 int main(int argc, char** argv) {
     QCoreApplication app(argc, argv);
     QCoreApplication::setApplicationName(QStringLiteral("dsh-desktop-updater"));
-    QCoreApplication::setApplicationVersion(QStringLiteral("0.1.0"));
+    QCoreApplication::setApplicationVersion(QString::fromLatin1(DSH_DESKTOP_VERSION));
 
     QCommandLineParser parser;
     parser.setApplicationDescription(
@@ -94,17 +101,23 @@ int main(int argc, char** argv) {
         QStringLiteral("sha256"),
         QStringLiteral("期望的来源文件 SHA-256（64 位十六进制）。"),
         QStringLiteral("sha256"));
+    const QCommandLineOption installPrefixOption(
+        QStringLiteral("install-prefix"),
+        QStringLiteral("可信安装前缀；未提供时默认取本可执行所在目录的父目录。"),
+        QStringLiteral("prefix"));
 
     parser.addOption(pidOption);
     parser.addOption(sourceOption);
     parser.addOption(destinationOption);
     parser.addOption(sha256Option);
+    parser.addOption(installPrefixOption);
     parser.process(app);
 
     const QString pidText = parser.value(pidOption);
     const QString source = parser.value(sourceOption);
     const QString destination = parser.value(destinationOption);
     const QString expectedSha = parser.value(sha256Option);
+    const QString installPrefix = parser.value(installPrefixOption);
 
     // --- 参数完整性校验 ---
     if (pidText.isEmpty() || source.isEmpty() || destination.isEmpty() ||
@@ -126,8 +139,27 @@ int main(int argc, char** argv) {
         return 2;
     }
 
-    // --- 等待旧实例退出（有界超时） ---
+    // 目标目录 = ```--destination`` 的父目录；恢复与替换都在此进行。
+    const QString destDir = QFileInfo(destination).absolutePath();
+    // 已安装桌面二进制：与本可执行同目录的 ``dsh-desktop``。
+    const QString installedBinary =
+        QCoreApplication::applicationDirPath() + QStringLiteral("/dsh-desktop");
+    // 可信安装前缀：未显式指定时取本可执行所在目录的父目录
+    // （/usr/bin -> /usr；~/.local/bin -> ~/.local）。
+    const QString trustedPrefix = installPrefix.isEmpty()
+        ? QFileInfo(QCoreApplication::applicationDirPath()).absolutePath()
+        : installPrefix;
+
     QString err;
+
+    // --- 启动恢复上次更新崩溃遗留的孤儿 .dsh-update 文件 ---
+    if (!recoverOrphanedDshUpdateFiles(destDir, &err)) {
+        std::fprintf(stderr, "dsh-desktop-updater: 恢复孤儿更新文件失败：%s\n",
+                     qPrintable(err));
+        return 8;
+    }
+
+    // --- 等待旧实例退出（有界超时） ---
     if (!waitForExit(pid, &err)) {
         std::fprintf(stderr, "dsh-desktop-updater: %s\n", qPrintable(err));
         return 3;
@@ -139,7 +171,7 @@ int main(int argc, char** argv) {
                      qPrintable(err));
         return 4;
     }
-    if (!validateDestination(destination, &err)) {
+    if (!validateInstallDestination(destination, installedBinary, trustedPrefix, &err)) {
         std::fprintf(stderr, "dsh-desktop-updater: 目标校验失败：%s\n",
                      qPrintable(err));
         return 5;
