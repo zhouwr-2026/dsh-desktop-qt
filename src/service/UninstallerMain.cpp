@@ -186,8 +186,15 @@ int main(int argc, char* argv[]) {
     // 交互模式需要 QApplication（Widgets）；--yes 无 GUI，可用 QCoreApplication。
     bool offscreen = false;
     for (int i = 1; i < argc; ++i) {
-        if (qstrcmp(argv[i], "--offscreen") == 0) { offscreen = true; break; }
-        if (qstrcmp(argv[i], "--yes") == 0) { offscreen = true; break; }
+        if (qstrcmp(argv[i], "--offscreen") == 0
+            || qstrcmp(argv[i], "--yes") == 0
+            || qstrcmp(argv[i], "--help") == 0
+            || qstrcmp(argv[i], "-h") == 0
+            || qstrcmp(argv[i], "--version") == 0
+            || qstrcmp(argv[i], "-v") == 0) {
+            offscreen = true;
+            break;
+        }
     }
     if (offscreen && qEnvironmentVariableIsEmpty("QT_QPA_PLATFORM")) {
         qputenv("QT_QPA_PLATFORM", "offscreen");
