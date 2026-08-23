@@ -73,6 +73,7 @@ set(DSH_CORE_SOURCES
     src/service/ServiceOwnership.cpp
     src/updater/Updater.cpp
     src/updater/DesktopVersionChecker.cpp
+    src/updater/UpdatePlan.cpp
     src/web/LoopbackWebPage.cpp
     src/web/DownloadInterceptor.cpp
     src/app/ExitDialog.cpp
@@ -99,6 +100,7 @@ set(DSH_CORE_HEADERS
     src/service/ServiceOwnership.h
     src/updater/Updater.h
     src/updater/DesktopVersionChecker.h
+    src/updater/UpdatePlan.h
     src/web/LoopbackWebPage.h
     src/web/DownloadInterceptor.h
     src/app/ExitDialog.h
