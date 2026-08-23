@@ -125,6 +125,29 @@ target_include_directories(dsh-service-unit-test PRIVATE
 )
 add_test(NAME service-unit COMMAND dsh-service-unit-test)
 
+# ServiceProvisioner 测试：路径选择 / 既有单元拒绝 / 原子写入 / 所有权记录 /
+# 非法 spec 拒绝 / 系统级无写入器拒绝 / reload-enable 仅对新写入放行。
+# 只写临时目录，绝不触碰真实 systemd 或 /etc。
+add_executable(dsh-service-provisioner-test test_service_provisioner.cpp)
+target_link_libraries(dsh-service-provisioner-test PRIVATE
+    Qt6::Core Qt6::Test dsh_desktop_core
+)
+target_include_directories(dsh-service-provisioner-test PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src
+)
+add_test(NAME service-provisioner COMMAND dsh-service-provisioner-test)
+
+# DshServiceManager 测试：纯函数（命令参数构建 / 提权 / unit 名校验 /
+# timeout-result 映射 / 归属策略）+ 用测试替身驱动真实 QProcess 的异步路径。
+add_executable(dsh-service-manager-test test_service_manager.cpp)
+target_link_libraries(dsh-service-manager-test PRIVATE
+    Qt6::Core Qt6::Test dsh_desktop_core
+)
+target_include_directories(dsh-service-manager-test PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src
+)
+add_test(NAME service-manager COMMAND dsh-service-manager-test)
+
 # 安装决策模型测试：纯数据/纯函数，不触发网络/进程/UI/systemd，可稳定运行。
 add_executable(dsh-installation-plan-test test_installation_plan.cpp)
 target_link_libraries(dsh-installation-plan-test PRIVATE

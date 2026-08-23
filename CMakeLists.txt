@@ -85,6 +85,8 @@ set(DSH_CORE_SOURCES
     src/service/ServiceDiscovery.cpp
     src/service/ServiceOwnership.cpp
     src/service/ServiceUnitBuilder.cpp
+    src/service/ServiceProvisioner.cpp
+    src/service/DshServiceManager.cpp
     src/service/InstallationPlan.cpp
     src/updater/Updater.cpp
     src/updater/DesktopVersionChecker.cpp
@@ -115,6 +117,8 @@ set(DSH_CORE_HEADERS
     src/service/ServiceDiscovery.h
     src/service/ServiceOwnership.h
     src/service/ServiceUnitBuilder.h
+    src/service/ServiceProvisioner.h
+    src/service/DshServiceManager.h
     src/service/InstallationPlan.h
     src/updater/Updater.h
     src/updater/DesktopVersionChecker.h
