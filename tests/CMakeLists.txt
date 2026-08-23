@@ -124,3 +124,13 @@ target_include_directories(dsh-service-unit-test PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/../src
 )
 add_test(NAME service-unit COMMAND dsh-service-unit-test)
+
+# 安装决策模型测试：纯数据/纯函数，不触发网络/进程/UI/systemd，可稳定运行。
+add_executable(dsh-installation-plan-test test_installation_plan.cpp)
+target_link_libraries(dsh-installation-plan-test PRIVATE
+    Qt6::Core Qt6::Test dsh_desktop_core
+)
+target_include_directories(dsh-installation-plan-test PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src
+)
+add_test(NAME installation-plan COMMAND dsh-installation-plan-test)
