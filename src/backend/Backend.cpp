@@ -73,9 +73,16 @@ std::unique_ptr<Backend> Backend::createForHost(const QString& url, QObject* par
     if (!isLoopbackUrl(resolvedUrl)) {
         return std::make_unique<ExternalBackend>(resolvedUrl, parent);
     }
-    const QString unit = SystemdBackend::detectUnit();
-    if (!unit.isEmpty()) {
-        return std::make_unique<SystemdBackend>(unit, resolvedUrl, parent);
+    const dsh::service::DetectedService detected = SystemdBackend::detect();
+    if (detected.valid) {
+        // 使用发现层解析到的实际监听地址组装 URL（而非默认值），并保留选中
+        // 候选的 scope，避免重新从文件系统推断 scope 或丢掉 host/port。
+        QUrl actual;
+        actual.setScheme(QStringLiteral("http"));
+        actual.setHost(detected.host);
+        actual.setPort(detected.port);
+        return std::make_unique<SystemdBackend>(
+            detected, actual.toString(QUrl::FullyEncoded), parent);
     }
     return std::make_unique<SupervisedBackend>(QString(), resolvedUrl, parent);
 }

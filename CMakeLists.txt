@@ -68,6 +68,9 @@ set(DSH_CORE_SOURCES
     src/backend/Backend.cpp
     src/backend/SystemdBackend.cpp
     src/backend/SupervisedBackend.cpp
+    src/service/SystemctlShowParser.cpp
+    src/service/ServiceDiscovery.cpp
+    src/service/ServiceOwnership.cpp
     src/updater/Updater.cpp
     src/web/LoopbackWebPage.cpp
     src/web/DownloadInterceptor.cpp
@@ -89,6 +92,10 @@ set(DSH_CORE_HEADERS
     src/backend/Backend.h
     src/backend/SystemdBackend.h
     src/backend/SupervisedBackend.h
+    src/service/ServiceInfo.h
+    src/service/SystemctlShowParser.h
+    src/service/ServiceDiscovery.h
+    src/service/ServiceOwnership.h
     src/updater/Updater.h
     src/web/LoopbackWebPage.h
     src/web/DownloadInterceptor.h

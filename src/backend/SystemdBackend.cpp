@@ -1,10 +1,9 @@
 // SPDX-License-Identifier: MIT
 // @author zhouwr
 #include "SystemdBackend.h"
+#include "service/ServiceDiscovery.h"
 
-#include <QDir>
 #include <QEventLoop>
-#include <QFile>
 #include <QJsonArray>
 #include <QJsonDocument>
 #include <QJsonObject>
@@ -95,24 +94,32 @@ int activeTaskProbe(const QString& url) {
 }
 }  // namespace
 
-SystemdBackend::SystemdBackend(const QString& unitName, const QString& url, QObject* parent)
-    : Backend(parent), unitName_(unitName), url_(url) {
-    unitIsSystem_ = QFile::exists(QStringLiteral("/etc/systemd/system/%1").arg(unitName_)) ||
-                    QFile::exists(QStringLiteral("/usr/lib/systemd/system/%1").arg(unitName_));
-    if (!unitIsSystem_) {
-        const QString userUnit = QDir::homePath() +
-                                 QStringLiteral("/.config/systemd/user/") + unitName_;
-        if (QFile::exists(userUnit)) unitName_ = userUnit.split('/').last();
+SystemdBackend::SystemdBackend(const dsh::service::DetectedService& detected,
+                               const QString& url, QObject* parent)
+    : Backend(parent),
+      unitName_(detected.unitName),
+      unitIsSystem_(detected.scope == dsh::service::ServiceScope::System) {
+    if (url.isEmpty()) {
+        QUrl actual;
+        actual.setScheme(QStringLiteral("http"));
+        actual.setHost(detected.host);
+        actual.setPort(detected.port);
+        url_ = actual.toString(QUrl::FullyEncoded);
+    } else {
+        url_ = url;
     }
 }
 
-QString SystemdBackend::detectUnit() {
-    auto exists = [](const QString& p) { return QFile::exists(p); };
-    if (exists("/etc/systemd/system/dsh-web.service")) return "dsh-web.service";
-    if (exists("/usr/lib/systemd/system/dsh-web.service")) return "dsh-web.service";
-    const QString user = QDir::homePath() + "/.config/systemd/user/dsh-web.service";
-    if (exists(user)) return "dsh-web.service";
-    return {};
+dsh::service::DetectedService SystemdBackend::detect() {
+    // 使用只读实况发现：仅当 systemctl show 验证 ``LoadState=loaded`` 且
+    // ExecStart 调用官方 ``dsh web`` 时才返回选中候选；否则拒绝未验证的、
+    // 外来的或陈旧的 unit（valid=false），让上层退化为子进程兜底。
+    // 结果取自发现层的选中项，因此遵循其文档化偏好（两者都有效时优先
+    // 当前用户的用户级服务），并把选中的 scope 与解析到的 host/port 一起
+    // 传给调用方，避免上层重新推断 scope 或丢掉实际监听地址。
+    const dsh::service::DiscoveryResult result =
+        dsh::service::discoverDshWebService(QStringLiteral("dsh-web.service"));
+    return result.detected();
 }
 
 bool SystemdBackend::isRunning() const {

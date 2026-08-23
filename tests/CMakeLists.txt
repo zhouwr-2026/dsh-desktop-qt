@@ -62,3 +62,23 @@ target_include_directories(dsh-rendering-policy-test PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/../src
 )
 add_test(NAME rendering-policy COMMAND dsh-rendering-policy-test)
+
+# service 发现解析测试：纯 Qt Core，不依赖 QProcess/systemctl
+add_executable(dsh-service-test test_service_discovery.cpp)
+target_link_libraries(dsh-service-test PRIVATE
+    Qt6::Core Qt6::Test dsh_desktop_core
+)
+target_include_directories(dsh-service-test PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src
+)
+add_test(NAME service-discovery COMMAND dsh-service-test)
+
+# service 所有权记录/一致性测试：纯 Qt Core，依赖 dsh_desktop_core
+add_executable(dsh-service-ownership-test test_service_ownership.cpp)
+target_link_libraries(dsh-service-ownership-test PRIVATE
+    Qt6::Core Qt6::Test dsh_desktop_core
+)
+target_include_directories(dsh-service-ownership-test PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src
+)
+add_test(NAME service-ownership COMMAND dsh-service-ownership-test)
