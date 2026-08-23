@@ -88,6 +88,7 @@ set(DSH_CORE_SOURCES
     src/service/ServiceProvisioner.cpp
     src/service/DshServiceManager.cpp
     src/service/InstallationPlan.cpp
+    src/service/UninstallPlan.cpp
     src/updater/Updater.cpp
     src/updater/DesktopVersionChecker.cpp
     src/updater/DesktopReleaseDownloader.cpp
@@ -120,6 +121,7 @@ set(DSH_CORE_HEADERS
     src/service/ServiceProvisioner.h
     src/service/DshServiceManager.h
     src/service/InstallationPlan.h
+    src/service/UninstallPlan.h
     src/updater/Updater.h
     src/updater/DesktopVersionChecker.h
     src/updater/DesktopReleaseDownloader.h

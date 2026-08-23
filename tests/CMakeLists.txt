@@ -158,6 +158,16 @@ target_include_directories(dsh-installation-plan-test PRIVATE
 )
 add_test(NAME installation-plan COMMAND dsh-installation-plan-test)
 
+# 卸载决策模型测试：纯数据/纯函数，不触发网络/进程/UI/systemd/磁盘，可稳定运行。
+add_executable(dsh-uninstall-plan-test test_uninstall_plan.cpp)
+target_link_libraries(dsh-uninstall-plan-test PRIVATE
+    Qt6::Core Qt6::Test dsh_desktop_core
+)
+target_include_directories(dsh-uninstall-plan-test PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src
+)
+add_test(NAME uninstall-plan COMMAND dsh-uninstall-plan-test)
+
 # 自更新助手测试：纯校验/原子替换逻辑，仅依赖 Qt Core + 助手静态库。
 add_executable(dsh-update-helper-test test_update_helper.cpp)
 target_link_libraries(dsh-update-helper-test PRIVATE
