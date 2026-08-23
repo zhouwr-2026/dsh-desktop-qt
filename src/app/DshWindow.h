@@ -54,7 +54,7 @@ public:
     /// 把窗口带到前台（先取消最小化）。
     void showAndRaise();
 
-    /// 重新加载当前 URL——"重启桌面"调用。
+    /// 重新加载当前 URL——启动/重启后台服务后刷新页面。
     void reload();
 
     QUrl currentUrl() const;

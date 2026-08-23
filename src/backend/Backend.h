@@ -12,6 +12,8 @@
 
 #pragma once
 
+#include "service/ServiceInfo.h"
+
 #include <QObject>
 #include <QString>
 #include <memory>
@@ -30,7 +32,43 @@ struct Status {
     QString url;          // 例如 http://127.0.0.1:3080
     QString detail;       // 人类可读的描述（systemd state / 子进程 pid 等）
     int activeTasks{0};   // 后端探测到的活跃任务数（粗略）
+
+    // -------------------------------------------------------------------
+    // 服务元数据：为上层 UI 提供"这是什么服务，处于什么状态，能否由桌面端
+    // 管理"的完整画像。复用 dsh::service 的枚举/类型，保持与只读发现层一致。
+    //
+    // 这里只保存"展示性"字段；具体如何从 systemctl/状态文件派生出这些值由
+    // 各后端在 status() 中按自身上下文填充。默认值即"未知/兜底"语义：
+    // 空串表示"不可用/未设置"，调用方按需补默认值。
+    // -------------------------------------------------------------------
+    dsh::service::ServiceScope scope{dsh::service::ServiceScope::System};
+    dsh::service::ServiceOrigin origin{dsh::service::ServiceOrigin::ExistingOfficial};
+    dsh::service::LifecycleState state{dsh::service::LifecycleState::Unknown};
+    bool manageable{false};   // 桌面端是否能管理其生命周期（start/stop/restart）
+    QString owner;            // 服务所有者 / 运行用户
+    QString dshHome;          // DSH_HOME；为空表示未设置（由调用方应用默认）
+    QString failureReason;    // 失败原因；正常运行时为空
+    QString journalSummary;   // journal 最近的日志摘要；为空表示不可用
 };
+
+/// 当前登录用户名（用于服务所有者 / 运行用户展示）。
+QString currentUserName();
+
+/// 用只读服务快照填充 ``Status`` 中可直接派生/展示的服务元数据字段。
+///
+/// 纯函数：不启动进程、不读磁盘、不查询 systemd 或所有权记录，只根据传入的
+/// ``dsh::service::ServiceInfo`` 派生：scope、state、owner、dshHome 与
+/// failureReason。以下字段由调用方按各自上下文填充，本函数不强加：
+///   * running / mode / url / detail / activeTasks（各自的 status() 语义）
+///   * origin（是否由桌面端补齐 / 外部 / 兜底，需要所有权或后端知识）
+///   * manageable（是否可管理，需要后端知识）
+///   * journalSummary（来自 journalctl 之类的外部只读数据，非快照派生）
+///
+/// \param currentUser 当前用户；当快照的 ``User`` 为空且服务是用户级时用于
+///                    填充 ``owner``。保持参数化便于纯测试注入确定性值。
+void applyServiceMetadata(Status& status,
+                          const dsh::service::ServiceInfo& info,
+                          const QString& currentUser = QString());
 
 class Backend : public QObject {
     Q_OBJECT

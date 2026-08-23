@@ -64,7 +64,10 @@ private:
     void onCheckUpdates(bool silent = false);
     void finishUpdateCheck(const dsh::updater::Status& status, bool silent);
     void onPerformUpdate();
-    void onRestartBackend();
+    void onRestartDesktop();   // 重启 DSH Desktop：重新拉起应用并退出
+    void onStartBackend();     // 启动后台服务
+    void onRestartBackend();   // 重启后台服务
+    void onStopBackend();      // 停止后台服务
     void onRequestQuit();
     void onShowAbout();
     void onShowLog();
@@ -76,6 +79,13 @@ private:
     void performQuit(bool stopBackground);
     void onSecondInstance();
     static QString singleInstanceSocketPath();
+
+    /// 桌面端当前能否管理后台服务生命周期（External / ``Unmanaged`` /
+    /// 不可管理时为 false）。
+    bool backendManageable() const;
+
+    /// 依据后端运行与可管理性刷新"DSH 后台服务"菜单分组状态。
+    void refreshBackendMenuState(bool running);
 
     AppArgs args_;
     dsh::util::Logger logger_;

@@ -2,6 +2,7 @@
 // @author zhouwr
 #include "SystemdBackend.h"
 #include "service/ServiceDiscovery.h"
+#include "service/ServiceOwnership.h"
 
 #include <QEventLoop>
 #include <QJsonArray>
@@ -98,7 +99,7 @@ SystemdBackend::SystemdBackend(const dsh::service::DetectedService& detected,
                                const QString& url, QObject* parent)
     : Backend(parent),
       unitName_(detected.unitName),
-      unitIsSystem_(detected.scope == dsh::service::ServiceScope::System) {
+      scope_(detected.scope) {
     if (url.isEmpty()) {
         QUrl actual;
         actual.setScheme(QStringLiteral("http"));
@@ -136,7 +137,7 @@ Status SystemdBackend::status() {
     } else {
         QProcess p;
         QStringList args;
-        if (!unitIsSystem_) args << "--user";
+        if (!isSystemUnit()) args << "--user";
         args << "--no-pager" << "is-active" << unitName_;
         p.start("systemctl", args);
         p.waitForFinished(3000);
@@ -145,7 +146,63 @@ Status SystemdBackend::status() {
                             QString::fromLocal8Bit(p.readAllStandardOutput()).trimmed());
     }
     s.activeTasks = s.running ? activeTaskProbe(url_) : 0;
+
+    // 服务元数据：使用只读实况发现得到当前选中的 ServiceInfo 快照，再派生
+    // scope/state/owner/dshHome/failureReason；origin 按只读所有权记录判定，
+    // journalSummary 读取只读 journal 摘要。发现不可用时回退到构造时记录的
+    // scope，并把 state 由运行探测推断，保持合理默认。本方法不改变任何
+    // 系统状态（无 start/stop/restart）。
+    const QString user = currentUserName();
+    const dsh::service::DiscoveryResult result =
+        dsh::service::discoverDshWebService(unitName_);
+    const dsh::service::DiscoveredService* selected = result.selected();
+    if (selected && selected->valid) {
+        applyServiceMetadata(s, selected->info, user);
+        s.origin = resolveOrigin(selected->info);
+        s.manageable = true;
+        // 失败/不可达时才拉取 journal 摘要，避免健康态多的一次进程调用。
+        if (!s.running || s.state == dsh::service::LifecycleState::Failed) {
+            s.journalSummary = journalSummary(selected->info);
+        }
+    } else {
+        // 快照不可用（systemctl 缺失/发现失败）：保留构造时 scope，给出保守默认。
+        s.scope = scope_;
+        s.origin = dsh::service::ServiceOrigin::ExistingOfficial;
+        s.state = s.running ? dsh::service::LifecycleState::Active
+                            : dsh::service::LifecycleState::Unknown;
+        s.manageable = true;
+        s.owner = user;
+    }
     return s;
+}
+
+dsh::service::ServiceOrigin SystemdBackend::resolveOrigin(
+    const dsh::service::ServiceInfo& info) const {
+    // 只读：加载所有权记录，若该 unit+scope 由桌面端补齐则标记为
+    // ProvisionedByDesktop，否则按已有官方服务处理。
+    dsh::service::ServiceOwnership ownership;
+    if (ownership.load() && ownership.contains(info.unitName, info.scope)) {
+        return dsh::service::ServiceOrigin::ProvisionedByDesktop;
+    }
+    return dsh::service::ServiceOrigin::ExistingOfficial;
+}
+
+QString SystemdBackend::journalSummary(const dsh::service::ServiceInfo& info) const {
+    const QString exe = QStandardPaths::findExecutable(QStringLiteral("journalctl"));
+    if (exe.isEmpty()) return {};
+    QProcess p;
+    QStringList args;
+    if (info.scope == dsh::service::ServiceScope::User) args << QStringLiteral("--user");
+    args << QStringLiteral("--no-pager") << QStringLiteral("-n") << QStringLiteral("5")
+         << QStringLiteral("-u") << info.unitName;
+    p.start(exe, args);
+    if (!p.waitForFinished(2000)) {
+        p.kill();
+        p.waitForFinished(500);
+        return {};
+    }
+    if (p.exitStatus() != QProcess::NormalExit || p.exitCode() != 0) return {};
+    return QString::fromLocal8Bit(p.readAllStandardOutput()).trimmed();
 }
 
 bool SystemdBackend::systemctl(const QString& verb, bool escalateIfNeeded) {
@@ -155,12 +212,12 @@ bool SystemdBackend::systemctl(const QString& verb, bool escalateIfNeeded) {
         return false;
     }
     QStringList systemctlArgs;
-    if (!unitIsSystem_) systemctlArgs << "--user";
+    if (!isSystemUnit()) systemctlArgs << "--user";
     systemctlArgs << verb << unitName_;
 
     QString program = exe;
     QStringList args = systemctlArgs;
-    if (escalateIfNeeded && unitIsSystem_ &&
+    if (escalateIfNeeded && isSystemUnit() &&
         (verb == "start" || verb == "stop" || verb == "restart")) {
         // 非 root 用户改系统 unit 时借助 pkexec 弹 polkit 框
         auto pkexec = QStandardPaths::findExecutable("pkexec");

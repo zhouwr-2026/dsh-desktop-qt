@@ -45,10 +45,18 @@ public:
 
 private:
     bool systemctl(const QString& verb, bool escalateIfNeeded = true);
+    bool isSystemUnit() const { return scope_ == dsh::service::ServiceScope::System; }
+
+    /// 由只读所有权记录判定服务来源（桌面端补齐 vs 官网已有）。
+    dsh::service::ServiceOrigin resolveOrigin(
+        const dsh::service::ServiceInfo& info) const;
+
+    /// 读取只读 journal 最近几行摘要；不可用时返回空串。
+    QString journalSummary(const dsh::service::ServiceInfo& info) const;
 
     QString unitName_;
     QString url_;
-    bool unitIsSystem_{true};
+    dsh::service::ServiceScope scope_{dsh::service::ServiceScope::System};
 };
 
 }  // namespace dsh::backend

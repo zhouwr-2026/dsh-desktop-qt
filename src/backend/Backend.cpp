@@ -4,6 +4,7 @@
 #include "SupervisedBackend.h"
 #include "SystemdBackend.h"
 
+#include <QDir>
 #include <QProcess>
 #include <QStandardPaths>
 #include <QUrl>
@@ -46,6 +47,15 @@ public:
         result.mode = Mode::External;
         result.url = url_;
         result.detail = QStringLiteral("远程后端（不由桌面端管理）");
+        // 远程模式：没有本机 unit，scope 无意义，保留默认 System；
+        // 生命周期只反映"是否可达"，不管理本机生命周期。
+        result.origin = dsh::service::ServiceOrigin::External;
+        result.state = result.running ? dsh::service::LifecycleState::Active
+                                      : dsh::service::LifecycleState::Unknown;
+        result.manageable = false;
+        if (!result.running) {
+            result.failureReason = QStringLiteral("远程后端不可达");
+        }
         return result;
     }
     bool start() override { return isRunning(); }
@@ -60,6 +70,38 @@ private:
 };
 
 }  // namespace
+
+QString currentUserName() {
+    const QByteArray user = qgetenv("USER");
+    if (!user.isEmpty()) return QString::fromLocal8Bit(user);
+    const QByteArray login = qgetenv("LOGNAME");
+    if (!login.isEmpty()) return QString::fromLocal8Bit(login);
+    return QDir(QDir::homePath()).dirName();
+}
+
+void applyServiceMetadata(Status& status,
+                          const dsh::service::ServiceInfo& info,
+                          const QString& currentUser) {
+    status.scope = info.scope;
+    status.state = info.state;
+    status.dshHome = info.dshHome;
+
+    status.owner = info.user;
+    if (status.owner.isEmpty()
+        && info.scope == dsh::service::ServiceScope::User
+        && !currentUser.isEmpty()) {
+        status.owner = currentUser;
+    }
+
+    status.failureReason.clear();
+    if (!info.loadState.isEmpty() && info.loadState != QLatin1String("loaded")) {
+        status.failureReason = QStringLiteral("LoadState=%1").arg(info.loadState);
+    } else if (info.state == dsh::service::LifecycleState::Failed) {
+        status.failureReason = info.subState.isEmpty()
+            ? QStringLiteral("ActiveState=failed")
+            : QStringLiteral("ActiveState=failed, SubState=%1").arg(info.subState);
+    }
+}
 
 QString Backend::defaultUrl() {
     // 尊重启动器 / 测试脚本的环境变量覆盖

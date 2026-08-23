@@ -58,12 +58,29 @@ Status SupervisedBackend::status() {
     s.running = isRunning();
     s.mode = Mode::Supervised;
     s.url = url_;
+    s.origin = dsh::service::ServiceOrigin::SupervisedFallback;
+    s.manageable = true;
+    s.owner = currentUserName();
+    // DSH_HOME：子进程启动时遵循环境的 DSH_HOME，缺省为 ~/.dsh。
+    const QByteArray envHome = qgetenv("DSH_HOME");
+    s.dshHome = envHome.isEmpty()
+        ? QDir::homePath() + QStringLiteral("/.dsh")
+        : QString::fromLocal8Bit(envHome);
+
     if (proc_) {
         s.detail = QStringLiteral("supervised 子进程 pid=%1 退出码=%2")
                        .arg(proc_->processId())
                        .arg(proc_->exitCode());
+        if (proc_->state() == QProcess::Running) {
+            s.state = dsh::service::LifecycleState::Active;
+        } else {
+            s.state = dsh::service::LifecycleState::Failed;
+            s.failureReason = QStringLiteral("supervised 子进程已退出（code=%1）")
+                                  .arg(proc_->exitCode());
+        }
     } else {
         s.detail = QStringLiteral("supervised：尚未启动");
+        s.state = dsh::service::LifecycleState::Inactive;
     }
     return s;
 }

@@ -14,7 +14,7 @@
 | 需求 | 实现 |
 | --- | --- |
 | 1. 原生 Linux 栈 | C++17 + Qt6 6.5+ + KDE Plasma 6 的 `StatusNotifierItem` 协议 + `org.freedesktop.*` D-Bus；不引入 Electron / Tauri。 |
-| 2. 常驻托盘 + 菜单 | `QSystemTrayIcon` + `QMenu`；菜单含 `显示桌面 / 隐藏桌面 / 检查更新 / 更新到最新版（仅在发现新版本时显示） / 重启桌面 / 退出`。 |
+| 2. 常驻托盘 + 菜单 | `QSystemTrayIcon` + `QMenu`；菜单含 `显示桌面 / 隐藏桌面 / 检查更新 / 更新到最新版（仅在发现新版本时显示） / 重启 DSH Desktop / DSH 后台服务（启动后台服务 / 重启后台服务 / 停止后台服务）/ 查看日志 / 清空下载缓存 / 关于 / 退出`。 |
 | 3. 退出原生对话框 + 后台服务勾选 | `QDialog` + `QCheckBox`；检测到活跃任务时显式高亮提示；勾选后才调 `systemctl stop dsh-web.service`（polkit 弹框）。 |
 | 4. 黑/白鲸鱼 SVG 主题自适应 | 鲸鱼路径直接来自 <https://github.com/deepseek-ai/deepseek-harness/blob/master/website/public/favicon.svg>；**重新设计为"五彩斑斓的黑"**：主体深色渐变填充（墨蓝→深蓝）+ 六色霓虹彩虹描边（红橙黄绿蓝紫），覆盖率从 0.64% 提升到 62%，在暗色主题下依然醒目；白色版为白鲸 + 彩虹描边；`ThemeWatcher` 同时监听 Qt `QStyleHints.colorScheme()`、KDE `~/.config/kdeglobals` 与 `~/.config/plasmarc`、`org.freedesktop.portal.Settings`；托盘 / 窗口 / 任务栏统一跟随；远程 xrdp 场景可用 `--theme dark` 强制暗色。 |
 | 5. session-logs 下载 | `QWebEngineProfile::downloadRequested` 拦截 `/api/session.export?sessionId=...`；弹原生保存对话框；由 WebEngine 原生下载保留 Cookie、代理和证书状态，并显示 `QProgressDialog`；完成后弹原生提示和 KDE 通知。 |
@@ -111,7 +111,9 @@ dsh-desktop --theme dark
 
 * 启动时若 `http://127.0.0.1:3080` 不通，托盘会弹原生警告并尝试
   `systemctl start dsh-web.service`；仍然失败则窗口依然打开但显示空白。
-* 托盘 `重启桌面` 调用 `systemctl restart dsh-web.service`，再重载页面。
+* 托盘 `重启 DSH Desktop` 用 `QProcess::startDetached` 重新拉起当前可执行文件
+  并退出，不影响后台服务；`DSH 后台服务` 分组里的 `启动 / 重启 / 停止后台服务`
+  分别调用后端的 start/restart/stop，停止前弹原生确认。
 * 退出对话框的 `同时停止后台 dsh web 服务` 勾选框勾选后才执行
   `systemctl stop dsh-web.service`（polkit 弹框）。
 * 当 `dsh-web.service` 未安装时，桌面端自动回退到 `dsh web` 子进程模式，

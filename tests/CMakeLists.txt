@@ -92,3 +92,14 @@ target_include_directories(dsh-service-ownership-test PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/../src
 )
 add_test(NAME service-ownership COMMAND dsh-service-ownership-test)
+
+# backend Status 元数据默认值与 applyServiceMetadata 纯映射测试：纯 Qt Core，
+# 不启动进程、不调用 systemctl/journalctl，可稳定运行。
+add_executable(dsh-backend-status-test test_backend_status.cpp)
+target_link_libraries(dsh-backend-status-test PRIVATE
+    Qt6::Core Qt6::Test dsh_desktop_core
+)
+target_include_directories(dsh-backend-status-test PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src
+)
+add_test(NAME backend-status COMMAND dsh-backend-status-test)

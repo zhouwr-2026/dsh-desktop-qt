@@ -58,7 +58,7 @@ assert data['tray_tooltip'] == 'DSH Desktop', '托盘提示只能显示应用名
 assert data['logo_theme'] == data['theme'], '统一 Logo 主题与全局主题不一致'
 assert data['window_logo_theme'] == data['theme'], '窗口 Logo 主题与全局主题不一致'
 assert data['clipboard_write_enabled'], 'WebEngine 剪贴板写入未启用'
-for expected in ('显示桌面', '隐藏桌面', '检查更新', '重启桌面', '退出'):
+for expected in ('显示桌面', '隐藏桌面', '检查更新', '重启 DSH Desktop', 'DSH 后台服务', '退出'):
     assert expected in data['menu_items'], f'菜单缺少 {expected}'
 assert not data['update_action_visible'], '更新按钮应默认隐藏'
 print(f'  托盘可见: {data["tray_visible"]}')

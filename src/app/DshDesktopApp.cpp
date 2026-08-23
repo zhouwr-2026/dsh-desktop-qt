@@ -10,6 +10,7 @@
 #include <QAbstractSocket>
 #include <QAction>
 #include <QApplication>
+#include <QCoreApplication>
 #include <QEventLoop>
 #include <QIcon>
 #include <QMenu>
@@ -20,6 +21,7 @@
 #include <QNetworkAccessManager>
 #include <QNetworkReply>
 #include <QNetworkRequest>
+#include <QProcess>
 #include <QSystemTrayIcon>
 #include <QTimer>
 #include <QUrl>
@@ -297,7 +299,10 @@ int DshDesktopApp::run() {
     tray_->bind(window_,
                 [this]() { onCheckUpdates(); },
                 [this]() { onPerformUpdate(); },
+                [this]() { onRestartDesktop(); },
+                [this]() { onStartBackend(); },
                 [this]() { onRestartBackend(); },
+                [this]() { onStopBackend(); },
                 [this]() { onRequestQuit(); },
                 [this]() { onShowAbout(); },
                 [this]() { onShowLog(); },
@@ -317,6 +322,7 @@ int DshDesktopApp::run() {
 
     // 后端健康检查使用异步 Qt 网络请求，避免 curl/systemctl 阻塞 GUI 线程。
     if (!args_.selfTest && !args_.smoke) {
+        refreshBackendMenuState(backend_->isRunning());
         healthNetwork_ = new QNetworkAccessManager(this);
         QTimer* healthTimer = new QTimer(this);
         healthTimer->setInterval(30'000);
@@ -422,18 +428,147 @@ void DshDesktopApp::onPerformUpdate() {
     onCheckUpdates(false);
 }
 
-void DshDesktopApp::onRestartBackend() {
-    logger_.log("托盘：重启桌面");
-    if (backend_->mode() == dsh::backend::Mode::External) {
-        if (window_) window_->reload();
-        return;
+bool DshDesktopApp::backendManageable() const {
+    if (!backend_) return false;
+    const auto status = backend_->status();
+    if (status.mode == dsh::backend::Mode::External) return false;
+    if (status.state == dsh::service::LifecycleState::Unmanaged) return false;
+    return status.manageable;
+}
+
+void DshDesktopApp::refreshBackendMenuState(bool running) {
+    if (!tray_ || !backend_) return;
+    // 菜单分组是否可管理：当前实现中仅 External（远程）后端不可管理；
+    // Unmanaged 状态由 backendManageable() 在各动作处理器里严格复核。
+    const bool manageable = backendManageable();
+    tray_->setBackendManageable(manageable, running);
+}
+
+void DshDesktopApp::onRestartDesktop() {
+    logger_.log("托盘：重启 DSH Desktop");
+    if (!qtApp_) return;
+    // 用当前可执行文件 + 原始参数重新拉起；先释放单实例锁，避免新实例把
+    // 自己当成"二次启动"而立刻退出。
+    const QString program = QCoreApplication::applicationFilePath();
+    QStringList args = qtApp_->arguments();
+    if (!args.isEmpty()) args.removeFirst();
+    if (singleInstanceServer_) {
+        singleInstanceServer_->close();
+        singleInstanceServer_->deleteLater();
+        singleInstanceServer_ = nullptr;
+        QLocalServer::removeServer(singleInstanceSocketPath());
     }
-    if (!backend_->restart()) {
+    if (QProcess::startDetached(program, args)) {
+        logger_.log("DSH Desktop 已重新拉起（startDetached），准备退出（不停止后台服务）。");
+        performQuit(false);  // 仅退出桌面端，后台服务保持运行
+    } else {
+        logger_.log("DSH Desktop 重启失败：QProcess::startDetached 返回 false");
         QMessageBox::warning(window_, QStringLiteral("DSH Desktop"),
-                             QStringLiteral("无法重启 dsh web 服务。"));
+                             QStringLiteral("无法重启 DSH Desktop。"));
+    }
+}
+
+void DshDesktopApp::onStartBackend() {
+    logger_.log("托盘：启动后台服务");
+    if (!backend_) return;
+    const auto status = backend_->status();
+    if (!backendManageable()) {
+        logger_.log(QStringLiteral("托盘：后台服务不可管理，拒绝启动（mode=%1 state=%2 manageable=%3）")
+                        .arg(static_cast<int>(status.mode))
+                        .arg(static_cast<int>(status.state))
+                        .arg(status.manageable));
+        QMessageBox::information(window_, tr("DSH 后台服务"),
+                                 tr("该后端由外部管理，桌面端无法启动。"));
         return;
     }
-    QTimer::singleShot(800, this, [this]() { if (window_) window_->reload(); });
+    if (status.running) {
+        logger_.log("托盘：后台服务已在运行，无需启动");
+        QMessageBox::information(window_, tr("DSH 后台服务"),
+                                 tr("后台服务已在运行。"));
+        return;
+    }
+    if (backend_->start()) {
+        logger_.log("托盘：后台服务已启动");
+        dsh::util::notify(tr("DSH 后台服务"), tr("后台服务已启动。"));
+        refreshBackendMenuState(true);
+        QTimer::singleShot(800, this, [this]() { if (window_) window_->reload(); });
+    } else {
+        logger_.log("托盘：后台服务启动失败");
+        QMessageBox::warning(window_, tr("DSH 后台服务"),
+                             tr("无法启动后台服务。\n%1").arg(status.detail));
+        refreshBackendMenuState(false);
+    }
+}
+
+void DshDesktopApp::onRestartBackend() {
+    logger_.log("托盘：重启后台服务");
+    if (!backend_) return;
+    const auto status = backend_->status();
+    if (!backendManageable()) {
+        logger_.log(QStringLiteral("托盘：后台服务不可管理，拒绝重启（mode=%1 state=%2 manageable=%3）")
+                        .arg(static_cast<int>(status.mode))
+                        .arg(static_cast<int>(status.state))
+                        .arg(status.manageable));
+        QMessageBox::information(window_, tr("DSH 后台服务"),
+                                 tr("该后端由外部管理，桌面端无法重启。"));
+        return;
+    }
+    if (!status.running) {
+        logger_.log("托盘：后台服务未运行，重启等价于启动");
+        onStartBackend();
+        return;
+    }
+    if (backend_->restart()) {
+        logger_.log("托盘：后台服务已重启");
+        dsh::util::notify(tr("DSH 后台服务"), tr("后台服务已重启。"));
+        refreshBackendMenuState(true);
+        QTimer::singleShot(800, this, [this]() { if (window_) window_->reload(); });
+    } else {
+        logger_.log("托盘：后台服务重启失败");
+        QMessageBox::warning(window_, tr("DSH 后台服务"),
+                             tr("无法重启后台服务。\n%1").arg(status.detail));
+        refreshBackendMenuState(status.running);
+    }
+}
+
+void DshDesktopApp::onStopBackend() {
+    logger_.log("托盘：停止后台服务");
+    if (!backend_) return;
+    const auto status = backend_->status();
+    if (!backendManageable()) {
+        logger_.log(QStringLiteral("托盘：后台服务不可管理，拒绝停止（mode=%1 state=%2 manageable=%3）")
+                        .arg(static_cast<int>(status.mode))
+                        .arg(static_cast<int>(status.state))
+                        .arg(status.manageable));
+        QMessageBox::information(window_, tr("DSH 后台服务"),
+                                 tr("该后端由外部管理，桌面端无法停止。"));
+        return;
+    }
+    if (!status.running) {
+        logger_.log("托盘：后台服务未运行，无需停止");
+        QMessageBox::information(window_, tr("DSH 后台服务"),
+                                 tr("后台服务当前未运行。"));
+        return;
+    }
+    // 停止前必须原生确认：停止已有官方服务可能影响其它终端/脚本/远程访问。
+    QMessageBox::StandardButton button = QMessageBox::question(
+        window_, tr("停止后台服务"),
+        tr("确定要停止 DSH 后台服务吗？\n\n%1").arg(status.detail),
+        QMessageBox::Yes | QMessageBox::No, QMessageBox::No);
+    if (button != QMessageBox::Yes) {
+        logger_.log("托盘：用户取消停止后台服务");
+        return;
+    }
+    if (backend_->stop()) {
+        logger_.log("托盘：后台服务已停止");
+        dsh::util::notify(tr("DSH 后台服务"), tr("后台服务已停止。"));
+        refreshBackendMenuState(false);
+    } else {
+        logger_.log("托盘：后台服务停止失败");
+        QMessageBox::warning(window_, tr("DSH 后台服务"),
+                             tr("无法停止后台服务。\n%1").arg(status.detail));
+        refreshBackendMenuState(true);
+    }
 }
 
 void DshDesktopApp::onRequestQuit() {
@@ -491,6 +626,8 @@ void DshDesktopApp::pollBackendHealth() {
             ? tr("HTTP %1").arg(httpStatus)
             : (reply->property("dshTimedOut").toBool()
                    ? tr("连接超时") : reply->errorString());
+        // 让"DSH 后台服务"分组按可达性与可管理性刷新启用状态。
+        refreshBackendMenuState(running);
         if (backendHealthKnown_ && running != lastBackendRunning_) {
             if (running) {
                 dsh::util::notify(tr("DSH Web 已恢复"),
@@ -500,7 +637,7 @@ void DshDesktopApp::pollBackendHealth() {
             } else {
                 dsh::util::notify(
                     tr("DSH Web 已停止"),
-                    tr("后端服务不可达。点击托盘『重启桌面』可尝试拉起。\n%1")
+                    tr("后端服务不可达。点托盘『DSH 后台服务 → 启动后台服务』可尝试拉起。\n%1")
                         .arg(detail),
                     tr("critical"), tr("dialog-error"), 0);
                 logger_.log(QStringLiteral("health: dsh-web 已停止：%1").arg(detail));
