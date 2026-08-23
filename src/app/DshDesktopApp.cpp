@@ -261,34 +261,58 @@ int DshDesktopApp::run() {
     }
 
     if (!backend_->isRunning()) {
-        if (backend_->mode() == dsh::backend::Mode::External) {
+        const auto status = backend_->status();
+        if (status.mode == dsh::backend::Mode::External) {
             logger_.log(QStringLiteral("启动：远程 dsh web 不可达：%1")
-                            .arg(backend_->url()));
+                            .arg(status.url));
             if (!args_.selfTest) {
                 QMessageBox::warning(
                     nullptr, QStringLiteral("DSH Desktop"),
                     QStringLiteral("无法连接远程 dsh web：\n%1\n\n"
                                    "请检查地址、网络和远程服务状态。")
-                        .arg(backend_->url()));
+                        .arg(status.url));
             }
         } else {
-            logger_.log("启动：dsh web 未运行；尝试启动");
-            if (!backend_->start()) {
-            // 启动失败时给用户明确的修复指引，而不是"无法启动"了事
-                const QStringList fixes = {
-                    QStringLiteral("• 检查 `dsh` 是否安装：`which dsh`"),
-                    QStringLiteral("• systemd 模式下：`systemctl status dsh-web.service`"),
-                    QStringLiteral("• 子进程模式下：尝试手动执行 `dsh web` 查看错误"),
-                    QStringLiteral("• 网络端口冲突：`ss -ltn | grep 3080`"),
-                };
-                QMessageBox box;
-                box.setIcon(QMessageBox::Warning);
-                box.setWindowTitle(QStringLiteral("DSH Desktop"));
-                box.setText(QStringLiteral("无法启动 dsh web 服务，桌面端仍会启动。\n\n"
-                                           "可执行以下步骤排查：\n%1").arg(fixes.join("\n")));
-                box.setStandardButtons(QMessageBox::Ok);
-                box.setDetailedText(backend_->status().detail);
-                box.exec();
+            // systemd 模式下，若官方后端处于 inactive/failed，不再静默自动拉起：
+            // 先问用户是否启动；Supervised / 其它状态仍保留原有自动启动行为。
+            bool shouldStart = true;
+            if (dsh::backend::requiresStartConfirmation(status) && !args_.selfTest) {
+                const QString why =
+                    status.state == dsh::service::LifecycleState::Failed
+                        ? tr("该 DSH 后端服务当前处于失败状态（failed），未正常运行。")
+                        : tr("该 DSH 后端服务当前已停止（inactive）。");
+                const QMessageBox::StandardButton button = QMessageBox::question(
+                    nullptr, tr("启动 DSH 后台服务"),
+                    tr("%1\n\n是否立即启动它？\n%2")
+                        .arg(why,
+                             status.detail.isEmpty() ? status.url : status.detail),
+                    QMessageBox::Yes | QMessageBox::No, QMessageBox::No);
+                shouldStart = (button == QMessageBox::Yes);
+                if (!shouldStart) {
+                    logger_.log(
+                        QStringLiteral("启动：用户未授权启动已停止/失败的 DSH 后端，"
+                                       "保持停止状态，继续打开桌面端。"));
+                }
+            }
+            if (shouldStart) {
+                logger_.log("启动：dsh web 未运行；尝试启动");
+                if (!backend_->start()) {
+                // 启动失败时给用户明确的修复指引，而不是"无法启动"了事
+                    const QStringList fixes = {
+                        QStringLiteral("• 检查 `dsh` 是否安装：`which dsh`"),
+                        QStringLiteral("• systemd 模式下：`systemctl status dsh-web.service`"),
+                        QStringLiteral("• 子进程模式下：尝试手动执行 `dsh web` 查看错误"),
+                        QStringLiteral("• 网络端口冲突：`ss -ltn | grep 3080`"),
+                    };
+                    QMessageBox box;
+                    box.setIcon(QMessageBox::Warning);
+                    box.setWindowTitle(QStringLiteral("DSH Desktop"));
+                    box.setText(QStringLiteral("无法启动 dsh web 服务，桌面端仍会启动。\n\n"
+                                               "可执行以下步骤排查：\n%1").arg(fixes.join("\n")));
+                    box.setStandardButtons(QMessageBox::Ok);
+                    box.setDetailedText(status.detail);
+                    box.exec();
+                }
             }
         }
     }

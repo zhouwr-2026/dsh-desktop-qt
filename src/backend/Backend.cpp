@@ -103,6 +103,12 @@ void applyServiceMetadata(Status& status,
     }
 }
 
+bool requiresStartConfirmation(const Status& status) {
+    return status.mode == Mode::Systemd
+        && (status.state == dsh::service::LifecycleState::Inactive
+            || status.state == dsh::service::LifecycleState::Failed);
+}
+
 QString Backend::defaultUrl() {
     // 尊重启动器 / 测试脚本的环境变量覆盖
     const QByteArray env = qgetenv("DSH_DESKTOP_URL");

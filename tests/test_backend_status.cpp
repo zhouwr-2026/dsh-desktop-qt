@@ -15,6 +15,7 @@
 using dsh::backend::Mode;
 using dsh::backend::Status;
 using dsh::backend::applyServiceMetadata;
+using dsh::backend::requiresStartConfirmation;
 using dsh::service::LifecycleState;
 using dsh::service::ServiceInfo;
 using dsh::service::ServiceOrigin;
@@ -59,6 +60,8 @@ private slots:
     void applyDshHomePassthrough();
     void applyClearsFailureReasonWhenHealthy();
     void applyDoesNotTouchLifecycleFields();
+    void requiresStartConfirmationSystemdStoppedOrFailed();
+    void requiresStartConfirmationOtherModesOrStates();
 };
 
 void TestBackendStatus::statusDefaults() {
@@ -198,6 +201,49 @@ void TestBackendStatus::applyDoesNotTouchLifecycleFields() {
     QCOMPARE(asInt(s.scope), asInt(ServiceScope::System));
     QCOMPARE(asInt(s.state), asInt(LifecycleState::Active));
     QCOMPARE(s.owner, QStringLiteral("zhouwr"));
+}
+
+void TestBackendStatus::requiresStartConfirmationSystemdStoppedOrFailed() {
+    // systemd 模式下，官方后端 inactive/failed 时应要求用户确认后再启动。
+    Status s;
+    s.mode = Mode::Systemd;
+    s.state = LifecycleState::Inactive;
+    QVERIFY(requiresStartConfirmation(s));
+
+    s.state = LifecycleState::Failed;
+    QVERIFY(requiresStartConfirmation(s));
+}
+
+void TestBackendStatus::requiresStartConfirmationOtherModesOrStates() {
+    // 默认 Status 不确认。
+    Status d;
+    QVERIFY(!requiresStartConfirmation(d));
+
+    // systemd 但处于 Active / Activating / Unknown / Unmanaged：不确认（保持自动启动）。
+    Status s;
+    s.mode = Mode::Systemd;
+    s.state = LifecycleState::Active;
+    QVERIFY(!requiresStartConfirmation(s));
+    s.state = LifecycleState::Activating;
+    QVERIFY(!requiresStartConfirmation(s));
+    s.state = LifecycleState::Unknown;
+    QVERIFY(!requiresStartConfirmation(s));
+    s.state = LifecycleState::Unmanaged;
+    QVERIFY(!requiresStartConfirmation(s));
+
+    // Supervised 模式（含 inactive）：保留原自动启动行为，不确认。
+    s.mode = Mode::Supervised;
+    s.state = LifecycleState::Inactive;
+    QVERIFY(!requiresStartConfirmation(s));
+    s.state = LifecycleState::Failed;
+    QVERIFY(!requiresStartConfirmation(s));
+
+    // External 模式（远程）：不确认。
+    s.mode = Mode::External;
+    s.state = LifecycleState::Inactive;
+    QVERIFY(!requiresStartConfirmation(s));
+    s.state = LifecycleState::Failed;
+    QVERIFY(!requiresStartConfirmation(s));
 }
 
 QTEST_GUILESS_MAIN(TestBackendStatus)

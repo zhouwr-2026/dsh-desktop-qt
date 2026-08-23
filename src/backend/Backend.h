@@ -70,6 +70,16 @@ void applyServiceMetadata(Status& status,
                           const dsh::service::ServiceInfo& info,
                           const QString& currentUser = QString());
 
+/// 启动路径的决策判定：systemd 模式下当官方后端处于 ``Inactive``/``Failed``
+/// 时，桌面端不应静默自动拉起，而应先询问用户是否启动（尊重用户有意停用或
+/// 正在修复失败服务的意图）。
+///
+/// 纯函数：只根据传入的 ``Status`` 判定，不启动进程、不读状态、不查询
+/// systemd，因此可被单元测试稳定调用。
+///
+/// \return true 表示需要用户确认后再调用 ``Backend::start()``。
+bool requiresStartConfirmation(const Status& status);
+
 class Backend : public QObject {
     Q_OBJECT
 public:
