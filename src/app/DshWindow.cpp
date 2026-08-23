@@ -100,7 +100,10 @@ DshWindow::DshWindow(const QString& url,
     createStartupPage();
 
     view_ = new QWebEngineView(contentStack_);
-    page_ = new dsh::web::LoopbackWebPage(profile_, QUrl(url_), openExternal, view_);
+    page_ = new dsh::web::LoopbackWebPage(
+        profile_, QUrl(url_), openExternal,
+        [this](const QString& m) { if (log_) log_(m); },
+        view_);
     connect(page_, &QWebEnginePage::permissionRequested, this,
             [this](QWebEnginePermission permission) {
         const bool trustedClipboardRequest =

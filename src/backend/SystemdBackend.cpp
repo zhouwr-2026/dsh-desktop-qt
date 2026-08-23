@@ -145,6 +145,11 @@ Status SystemdBackend::status() {
                        .arg(unitName_,
                             QString::fromLocal8Bit(p.readAllStandardOutput()).trimmed());
     }
+    // 若上一次 start/stop/restart 失败，把真实错误原因追加到 detail 里，
+    // 这样上层 QMessageBox 能给到比"无法停止"更具体的提示。
+    if (!lastOperationError_.isEmpty()) {
+        s.detail = s.detail + QStringLiteral("\n最近一次失败：") + lastOperationError_;
+    }
     s.activeTasks = s.running ? activeTaskProbe(url_) : 0;
 
     // 服务元数据：使用只读实况发现得到当前选中的 ServiceInfo 快照，再派生
@@ -206,37 +211,107 @@ QString SystemdBackend::journalSummary(const dsh::service::ServiceInfo& info) co
 }
 
 bool SystemdBackend::systemctl(const QString& verb, bool escalateIfNeeded) {
-    auto exe = QStandardPaths::findExecutable("systemctl");
+    const QString exe = QStandardPaths::findExecutable("systemctl");
     if (exe.isEmpty()) {
-        emit log("systemctl 未安装");
+        const QString err = QStringLiteral("systemctl 未安装");
+        emit log(err);
+        lastOperationError_ = err;
         return false;
     }
+
     QStringList systemctlArgs;
     if (!isSystemUnit()) systemctlArgs << "--user";
     systemctlArgs << verb << unitName_;
 
+    // 提权策略（仅对 system unit + start/stop/restart；user unit 直接跑）：
+    //   1. 已是 root：直接调
+    //   2. sudo -n -l <systemctl> 探测 NOPASSWD：成功就 sudo -n 调
+    //   3. pkexec --disable-internal-agent（polkit 认证框）
+    //   4. 直接以当前用户身份跑（很可能因权限不足失败，但错误信息明确）
+    //
+    // 历史教训：polkit 127 + 部分 KDE 会话里 pkexec 报
+    // "No authentication agent found"，但 sudo NOPASSWD 走通是常态
+    // （Arch/Ubuntu 装机默认给主用户免密 sudo）。优先 sudo 可避开 polkit agent。
     QString program = exe;
     QStringList args = systemctlArgs;
-    if (escalateIfNeeded && isSystemUnit() &&
-        (verb == "start" || verb == "stop" || verb == "restart")) {
-        // 非 root 用户改系统 unit 时借助 pkexec 弹 polkit 框
-        auto pkexec = QStandardPaths::findExecutable("pkexec");
-        if (!pkexec.isEmpty() && ::geteuid() != 0) {
-            program = pkexec;
-            args = {"--disable-internal-agent", exe};
-            args.append(systemctlArgs);
+    if (escalateIfNeeded && isSystemUnit()
+        && (verb == "start" || verb == "stop" || verb == "restart")
+        && ::geteuid() != 0) {
+        const QString sudo = QStandardPaths::findExecutable("sudo");
+        if (!sudo.isEmpty()) {
+            // 探测 `sudo -n -l <cmd>` 是否免密
+            QProcess probe;
+            probe.start(sudo, {"-n", "-l", exe});
+            if (probe.waitForFinished(3000) && probe.exitCode() == 0) {
+                program = sudo;
+                args = {"-n", exe};
+                args.append(systemctlArgs);
+                emit log(QStringLiteral("backend: 检测到 sudo NOPASSWD，使用 sudo 提权"));
+            } else {
+                const QString pkexec = QStandardPaths::findExecutable("pkexec");
+                if (!pkexec.isEmpty()) {
+                    program = pkexec;
+                    args = {"--disable-internal-agent", exe};
+                    args.append(systemctlArgs);
+                    emit log(QStringLiteral(
+                        "backend: sudo NOPASSWD 不可用，回退到 pkexec"));
+                } else {
+                    emit log(QStringLiteral(
+                        "backend: 无可用的提权方式（sudo 无 NOPASSWD 且无 pkexec），"
+                        "将以当前用户身份尝试 systemctl（很可能失败）"));
+                }
+            }
+        } else {
+            const QString pkexec = QStandardPaths::findExecutable("pkexec");
+            if (!pkexec.isEmpty()) {
+                program = pkexec;
+                args = {"--disable-internal-agent", exe};
+                args.append(systemctlArgs);
+            }
         }
     }
     QProcess p;
+    p.setProcessChannelMode(QProcess::MergedChannels);
     emit log(QStringLiteral("backend: %1 %2").arg(program, args.join(' ')));
     p.start(program, args);
-    if (!p.waitForFinished(20000)) {
-        emit log(QStringLiteral("backend: systemctl %1 超时").arg(verb));
+    if (!p.waitForStarted(5000)) {
+        const QString err = QStringLiteral("backend: 启动 %1 失败（%2）")
+                                .arg(program, p.errorString());
+        emit log(err);
+        lastOperationError_ = err;
         return false;
     }
-    const bool ok = (p.exitCode() == 0);
-    emit log(QStringLiteral("backend: systemctl %1 -> rc=%2").arg(verb).arg(p.exitCode()));
-    return ok;
+    if (!p.waitForFinished(20000)) {
+        const QString err = QStringLiteral("backend: systemctl %1 超时（>20s）").arg(verb);
+        emit log(err);
+        lastOperationError_ = err;
+        p.kill();
+        p.waitForFinished(3000);
+        return false;
+    }
+    const QString output = QString::fromLocal8Bit(p.readAll()).trimmed();
+    // 综合判定：进程必须正常退出（未被信号杀），且 exit code 为 0；再叠加
+    // QProcess::error() 看是否有更细粒度的失败原因（如超时被 kill）。
+    const bool normalExit = (p.exitStatus() == QProcess::NormalExit);
+    const bool cleanExit = normalExit && (p.exitCode() == 0);
+    if (cleanExit && p.error() == QProcess::UnknownError) {
+        emit log(QStringLiteral("backend: systemctl %1 -> ok").arg(verb));
+        lastOperationError_.clear();
+        return true;
+    }
+    const QString reason = !normalExit
+        ? QStringLiteral("进程被信号终止（status=%1）")
+              .arg(static_cast<int>(p.exitStatus()))
+        : (p.error() != QProcess::UnknownError
+              ? QStringLiteral("QProcess 错误：%1").arg(p.errorString())
+              : QStringLiteral("rc=%1").arg(p.exitCode()));
+    const QString err = output.isEmpty()
+        ? QStringLiteral("backend: systemctl %1 失败：%2").arg(verb).arg(reason)
+        : QStringLiteral("backend: systemctl %1 失败：%2\n%3")
+              .arg(verb).arg(reason).arg(output);
+    emit log(err);
+    lastOperationError_ = err;
+    return false;
 }
 
 bool SystemdBackend::start() {

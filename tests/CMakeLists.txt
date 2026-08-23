@@ -220,3 +220,15 @@ target_link_libraries(dsh-build-version-test PRIVATE
 )
 # BuildVersion.h 通过 dsh_desktop_core 的 PUBLIC include 目录暴露，无需额外路径。
 add_test(NAME build-version COMMAND dsh-build-version-test)
+
+# 退出/重启对话框测试：勾选框文字、默认状态、未运行时锁定勾选。
+# 需 offscreen 平台避免阻塞模态事件循环。
+add_executable(dsh-shutdown-dialogs-test test_shutdown_dialogs.cpp)
+target_link_libraries(dsh-shutdown-dialogs-test PRIVATE
+    Qt6::Core Qt6::Gui Qt6::Widgets Qt6::Test dsh_desktop_core
+)
+target_include_directories(dsh-shutdown-dialogs-test PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src
+)
+add_test(NAME shutdown-dialogs COMMAND dsh-shutdown-dialogs-test)
+set_tests_properties(shutdown-dialogs PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")

@@ -14,8 +14,8 @@
 | 需求 | 实现 |
 | --- | --- |
 | 1. 原生 Linux 栈 | C++17 + Qt6 6.5+ + KDE Plasma 6 的 `StatusNotifierItem` 协议 + `org.freedesktop.*` D-Bus；不引入 Electron / Tauri。 |
-| 2. 常驻托盘 + 菜单 | `QSystemTrayIcon` + `QMenu`；菜单含 `显示桌面 / 隐藏桌面 / 检查更新 / 更新到最新版（仅在发现新版本时显示） / 重启 DSH Desktop / DSH 后台服务（启动后台服务 / 重启后台服务 / 停止后台服务）/ 查看日志 / 清空下载缓存 / 关于 / 退出`。 |
-| 3. 退出原生对话框 + 后台服务勾选 | `QDialog` + `QCheckBox`；检测到活跃任务时显式高亮提示；勾选后才调 `systemctl stop dsh-web.service`（polkit 弹框）。 |
+| 2. 常驻托盘 + 菜单 | `QSystemTrayIcon` + `QMenu`；菜单含 `显示桌面 / 隐藏桌面 / 检查更新 / 更新到最新版（仅在发现新版本时显示） / 查看日志 / 清空下载缓存 / 关于 / 重启 / 退出`。 |
+| 3. 退出 / 重启原生对话框 + 后台服务勾选 | 独立的 `ExitDialog` 与 `RestartDialog` + `QCheckBox`；检测到活跃任务时显式高亮提示。后端运行中：勾选才调 `systemctl stop|restart dsh-web.service`（polkit 弹框）；后端未运行时勾选框锁定为"同时启动 DSH 后台服务"，未安装则弹原生确认后自动 `pkexec npm i -g @deepseek-ai/dsh`。 |
 | 4. 黑/白鲸鱼 SVG 主题自适应 | 图标为**纯色**黑/白小鲸鱼 SVG（单一 path，fill 分别为 `#000000` / `#FFFFFF`），`assets/dsh-whale-{black,white}.svg` 为唯一 canonical 来源，经 `assets/icons.qrc` 内嵌到二进制，**全链路仅 SVG、无任何 PNG 位图变体**；`ThemeWatcher` 优先读 KDE 配置（`LookAndFeelPackage` / `ColorScheme`，含跨用户会话导出的主题标记），辅以 Qt `QStyleHints.colorScheme()`、`org.freedesktop.portal.Settings` 与 QPalette 兜底；托盘 / 窗口 / 任务栏 / 关于 对话框统一跟随；远程 xrdp 场景可用 `--theme dark` 强制暗色。 |
 | 5. session-logs 下载 | `QWebEngineProfile::downloadRequested` 拦截 `/api/session.export?sessionId=...`；弹原生保存对话框；由 WebEngine 原生下载保留 Cookie、代理和证书状态，并显示 `QProgressDialog`；完成后弹原生提示和 KDE 通知。 |
 | 6. 外部链接走系统浏览器 | 自定义 `LoopbackWebPage::acceptNavigationRequest` 只允许应用精确同源导航；其他 HTTP(S)、`mailto:` 与 `tel:` 交给 `QDesktopServices::openUrl`，并拒绝 `file:`、`javascript:` 等危险 scheme。 |
@@ -119,13 +119,15 @@ dsh-desktop --theme dark
   服务，桌面端**不会无条件启动**：先弹原生确认框询问用户（inactive/failed 时
   均提示），用户点"是"才调用 `systemctl start`，点"否"则保持停止、继续打开
   桌面端。仍然失败则窗口依然打开但显示空白。
-* 托盘 `重启 DSH Desktop` 用 `QProcess::startDetached` 重新拉起当前可执行文件
-  并退出，不影响后台服务；`DSH 后台服务` 分组里的 `启动 / 重启 / 停止后台服务`
-  分别调用后端的 start/restart/stop，仅在可管理时启用，停止前弹原生确认。
-* 退出对话框的 `同时停止后台 dsh web 服务` 勾选框勾选后才执行
-  `systemctl stop dsh-web.service`（polkit 弹框）。
+* 托盘 `重启` 用 `QProcess::startDetached` 重新拉起当前可执行文件并退出，
+  是否动后端由原生 `RestartDialog` 的勾选决定（运行中勾选=重启后端；未运行
+  无论勾选与否都先尝试拉起；未安装则弹原生确认后自动 `pkexec npm i -g
+  @deepseek-ai/dsh`）。
+* `退出` 对话框的 `同时停止后台 dsh web 服务` 勾选框勾选后才执行
+  `systemctl stop dsh-web.service`（polkit 弹框）；后端未运行时勾选框锁定
+  为"同时启动 DSH 后台服务"。
 * 当 `dsh-web.service` 未安装或未通过校验时，桌面端自动回退到 `dsh web`
-  子进程模式，退出对话框的勾选框变为 `同时停止由桌面端拉起的 dsh web 子进程`。
+  子进程模式，对话框的勾选框变为 `同时停止/重启由桌面端拉起的 dsh web 子进程`。
 
 ### 已实现 vs 规划中的服务管理部分
 
@@ -137,7 +139,8 @@ dsh-desktop --theme dark
   归属、`applyServiceMetadata` 派生 scope/state/owner/failureReason。
 * 对 inactive/failed 既有官方服务的**运行时就地授权**（`requiresStartConfirmation`
   → 原生确认框）。
-* 托盘的 `DSH 后台服务` 分组（启动 / 重启 / 停止，按可管理性启用）。
+* 退出 / 重启对话框里的勾选框统一语义（运行中=stop/restart，未运行=自动 start
+  + 必要时自动 `npm i -g @deepseek-ai/dsh`）。
 * 统一后端 + 桌面更新（`UpdatePlan` / `UpdateDialog` / `DesktopVersionChecker` /
   `DesktopReleaseDownloader` / `dsh-desktop-updater`）。
 

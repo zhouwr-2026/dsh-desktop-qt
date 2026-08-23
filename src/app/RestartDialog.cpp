@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT
 // @author zhouwr
-#include "ExitDialog.h"
+#include "RestartDialog.h"
 
 #include <QDialogButtonBox>
 #include <QLabel>
@@ -9,14 +9,14 @@
 
 namespace dsh::app {
 
-ExitDialog::ExitDialog(int activeTasks,
-                       const QString& backendUrl,
-                       bool supervisedMode,
-                       bool backendRunning,
-                       bool canManageBackend,
-                       QWidget* parent)
+RestartDialog::RestartDialog(int activeTasks,
+                             const QString& backendUrl,
+                             bool supervisedMode,
+                             bool backendRunning,
+                             bool canManageBackend,
+                             QWidget* parent)
     : QDialog(parent) {
-    setWindowTitle(tr("退出 DSH Desktop"));
+    setWindowTitle(tr("重启 DSH Desktop"));
     setMinimumWidth(460);
 
     auto* layout = new QVBoxLayout(this);
@@ -24,25 +24,24 @@ ExitDialog::ExitDialog(int activeTasks,
     if (activeTasks > 0) {
         auto* warn = new QLabel(
             tr("⚠  检测到 <b>%1</b> 个后台任务正在执行，\n"
-               "现在退出可能会中断它们。")
+               "现在重启可能会中断它们。")
                 .arg(activeTasks));
         warn->setStyleSheet("color: #d35400; font-weight: 600;");
         warn->setWordWrap(true);
         layout->addWidget(warn);
     }
 
-    QString message = tr("确定要退出 DSH Desktop 吗？\n\n"
-                         "• 托盘菜单会消失\n"
-                         "• 主窗口将被关闭\n"
-                         "• 进程彻底退出，需要再次启动才能重新打开桌面");
+    QString message = tr("确定要重启 DSH Desktop 吗？\n\n"
+                         "• 当前进程会被替换，托盘会短暂消失\n"
+                         "• 新的桌面端启动后会重新连接后端");
     if (canManageBackend) {
         if (backendRunning) {
-            message += tr("\n• 勾选下方选项可同时停止后台 dsh web 服务");
+            message += tr("\n• 勾选下方选项可同时重启后台 dsh web 服务");
         } else {
             message += tr("\n• 后端服务未运行，桌面端会先尝试拉起它");
         }
     } else {
-        message += tr("\n• 远程 dsh web 不会被停止");
+        message += tr("\n• 远程 dsh web 不会被重启");
     }
     auto* msg = new QLabel(message);
     msg->setWordWrap(true);
@@ -51,10 +50,10 @@ ExitDialog::ExitDialog(int activeTasks,
     if (canManageBackend) {
         if (backendRunning) {
             checkbox_ = new QCheckBox(
-                tr("同时停止后台 dsh web 服务  (%1)").arg(backendUrl));
+                tr("同时重启后台 dsh web 服务  (%1)").arg(backendUrl));
             if (supervisedMode) {
                 checkbox_->setText(
-                    tr("同时停止由桌面端拉起的 dsh web 子进程  (%1)").arg(backendUrl));
+                    tr("同时重启由桌面端拉起的 dsh web 子进程  (%1)").arg(backendUrl));
             }
         } else {
             // 后端未运行：勾选框只是说明性，调用方会无条件拉起；锁定为勾
@@ -71,7 +70,7 @@ ExitDialog::ExitDialog(int activeTasks,
 
     auto* buttons = new QDialogButtonBox(
         QDialogButtonBox::Cancel | QDialogButtonBox::Ok);
-    buttons->button(QDialogButtonBox::Ok)->setText(tr("退出"));
+    buttons->button(QDialogButtonBox::Ok)->setText(tr("重启"));
     buttons->button(QDialogButtonBox::Cancel)->setText(tr("取消"));
     buttons->button(QDialogButtonBox::Ok)->setDefault(true);
     connect(buttons, &QDialogButtonBox::accepted, this, &QDialog::accept);

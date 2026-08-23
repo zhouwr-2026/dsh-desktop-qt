@@ -3,6 +3,7 @@
 #include "DownloadInterceptor.h"
 
 #include "../util/Notify.h"
+#include "SuppressExportToast.h"
 
 #include <QCoreApplication>
 #include <QDir>
@@ -12,6 +13,7 @@
 #include <QProgressDialog>
 #include <QStandardPaths>
 #include <QWebEngineDownloadRequest>
+#include <QWebEnginePage>
 #include <QWidget>
 
 namespace dsh::web {
@@ -55,6 +57,22 @@ void DownloadInterceptor::handle(QWebEngineDownloadRequest* request) {
         return;
     }
     emit log(QStringLiteral("downloads: 拦截会话导出请求 %1").arg(url.path()));
+
+    // 【桌面端逻辑】拦截到 session 导出时，主动向嵌入式 webview 注入清理
+    // JS，移除官方 DSH Web UI 渲染的"Session 导出已开始下载 / 浏览器正在
+    // 下载 Session ZIP 文件"自定义 HTML toast。
+    //
+    // 约束满足：
+    //   * 不动 @deepseek-ai/dsh 源码 —— 只做运行时 DOM 清理；
+    //   * 浏览器直开 http://127.0.0.1:3080/ 不受影响 —— 本模块的 JS 不在
+    //     user-script 集合注册，只在 `page->runJavaScript` 显式调用时才执行；
+    //   * 决定权在 C++ —— 只有确认命中 `/api/session.export` 才注入。
+    if (QWebEnginePage* page = request->page()) {
+        page->runJavaScript(dsh::web::sessionExportToastRemovalScript());
+        emit log("downloads: 已向页面注入 toast 清理脚本");
+    } else {
+        emit log("downloads: 无页面句柄，跳过 toast 清理");
+    }
 
     // 默认下载路径：遵守 XDG 数据目录约定，避免污染用户 ~/Downloads。
     // 用户仍可在原生保存对话框里改选其他位置。
@@ -122,10 +140,11 @@ void DownloadInterceptor::finish(QWebEngineDownloadRequest* request) {
         const QString destination = request->downloadDirectory()
             + QDir::separator() + request->downloadFileName();
         if (request->state() == QWebEngineDownloadRequest::DownloadCompleted) {
-            QMessageBox::information(qobject_cast<QWidget*>(parent()), tr("下载完成"),
-                                     tr("会话日志已保存到：\n%1").arg(destination));
+            // 只发 KDE 通知，不再弹原生对话框：保持桌面端"安静"原则，
+            // 与托盘后台动作的反馈风格统一。
             dsh::util::notify(tr("下载完成"),
-                              tr("会话日志已保存到 %1").arg(destination));
+                              tr("会话日志已保存到 %1").arg(destination),
+                              tr("normal"), tr("dialog-information"), 6000);
         } else if (request->state() == QWebEngineDownloadRequest::DownloadInterrupted) {
             emit log(QStringLiteral("downloads: 下载中断：%1")
                          .arg(request->interruptReasonString()));

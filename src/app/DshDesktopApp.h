@@ -38,6 +38,15 @@ struct AppArgs {
     bool selfTest{false};// --self-test：完整启动后输出报告再退出
 };
 
+/// 退出/重启流程里"对后台服务想做什么"的统一意图。
+///
+/// 由 ExitDialog / RestartDialog 的勾选状态 + 后端实际运行状态联合决定
+/// 最终执行的动作；本结构只承载用户意图与必要上下文。
+struct ShutdownIntent {
+    bool manageBackend{false};   // 用户是否勾选了"同时处理后台服务"
+    dsh::backend::Status status; // 触发对话框时的后端快照
+};
+
 class DshDesktopApp : public QObject {
     Q_OBJECT
 public:
@@ -61,11 +70,14 @@ private:
     void onCheckUpdates(bool silent = false);
     void finishUpdateCheck(const dsh::updater::UpdatePlan& plan, bool silent);
     void onPerformUpdate();
-    void onRestartDesktop();   // 重启 DSH Desktop：重新拉起应用并退出
-    void onStartBackend();     // 启动后台服务
-    void onRestartBackend();   // 重启后台服务
-    void onStopBackend();      // 停止后台服务
+
+    /// 托盘"重启"菜单点击：先弹 RestartDialog，按勾选执行相应动作后
+    /// 重新拉起桌面端并退出。
+    void onRestartWithDialog();
+
+    /// 托盘"退出"菜单点击：先弹 ExitDialog，按勾选执行相应动作后退出。
     void onRequestQuit();
+
     void onShowAbout();
     void onShowLog();
     void onClearDownloads();
@@ -73,7 +85,26 @@ private:
     void onThemeChanged(const QString& scheme);
     void pollBackendHealth();
     void applyLogoTheme(const QString& scheme);
-    void performQuit(bool stopBackground);
+
+    /// 按 ``ShutdownIntent`` 决定对后台服务做什么，再执行桌面端退出。
+    /// ``backendAction`` 在调用前完成；动作即使失败也不会阻塞桌面端退出。
+    void performQuit(const ShutdownIntent& intent);
+
+    /// 按 ``ShutdownIntent`` 决定对后台服务做什么，再重新拉起桌面端并
+    /// 退出当前实例。动作即使失败也不会阻塞桌面端重启。
+    void performRestart(const ShutdownIntent& intent);
+
+    /// 拉起后台服务；不可用时按用户授权执行 ``npm i -g @deepseek-ai/dsh``
+    /// 自动安装再重试。返回是否最终启动成功（含已运行情况）。
+    bool ensureBackendStarted(const dsh::backend::Status& status);
+
+    /// 退出/重启对话框的通用流程：互斥锁 + 显示对话框 + 落地前重拉 status。
+    /// 由 onRestartWithDialog / onRequestQuit 共用，避免重复样板。
+    void runShutdownDialog(
+        std::function<std::unique_ptr<QDialog>(const dsh::backend::Status&)> makeDialog,
+        std::function<bool(QDialog*)> readCheckbox,
+        std::function<void(const ShutdownIntent&)> apply);
+
     void onSecondInstance();
     static QString singleInstanceSocketPath();
 
@@ -86,9 +117,6 @@ private:
     /// 桌面端当前能否管理后台服务生命周期（External / ``Unmanaged`` /
     /// 不可管理时为 false）。
     bool backendManageable() const;
-
-    /// 依据后端运行与可管理性刷新"DSH 后台服务"菜单分组状态。
-    void refreshBackendMenuState(bool running);
 
     AppArgs args_;
     dsh::util::Logger logger_;

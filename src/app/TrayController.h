@@ -8,13 +8,16 @@
 //
 //   * 显示桌面 / 隐藏桌面
 //   * 检查更新 / 更新到最新版（默认隐藏，仅在 ``check()`` 发现新版本后显示）
-//   * 重启 DSH Desktop（重新拉起当前可执行文件并退出，不影响后台服务）
-//   * DSH 后台服务 分组：启动后台服务 / 重启后台服务 / 停止后台服务
 //   * 查看日志 / 清空下载缓存 / 关于
-//   * 退出
+//   * 重启（先弹原生 RestartDialog，按勾选决定是否重启/启动/离开后台服务）
+//   * 退出（先弹原生 ExitDialog，按勾选决定是否停止/启动/离开后台服务）
 //
-// "重启 DSH Desktop" 与 "DSH 后台服务" 分组之间用分隔符隔开，明确区分
-// "重启桌面应用" 与 "管理后台 dsh web 服务" 两种不同的生命周期操作。
+// 后台服务的启动 / 停止 / 重启 **不再** 暴露在托盘菜单上：用户通过「重启」
+// 或「退出」对话框里的"是否启动/重启/停止后台服务"复选框来表达意图，避免
+// 在顶级菜单上重复一组生命周期动作。
+//
+// "重启" 与 "退出" 之间用分隔符隔开，明确区分桌面端与后端的两类生命周期
+// 操作（后者已并入对话框）。
 
 #pragma once
 
@@ -43,11 +46,11 @@ public:
     ///
     /// \param onCheck          检查更新
     /// \param onUpdate         更新到最新版
-    /// \param onRestartDesktop 重启 DSH Desktop（重新拉起应用并退出）
-    /// \param onStartBackend   启动后台服务
-    /// \param onRestartBackend 重启后台服务
-    /// \param onStopBackend    停止后台服务
-    /// \param onQuit           退出
+    /// \param onRestartDesktop 托盘"重启"点击（实为 DshDesktopApp 端的
+    ///                         ``onRestartWithDialog``：先弹 RestartDialog，
+    ///                         再按勾选决定是否重启/启动/离开后台服务）
+    /// \param onQuit           退出（先弹 ExitDialog，再按勾选决定是否停止
+    ///                         /启动/离开后台服务）
     /// \param onAbout          关于
     /// \param onLog            查看日志
     /// \param onClear          清空下载缓存
@@ -55,9 +58,6 @@ public:
               std::function<void()> onCheck,
               std::function<void()> onUpdate,
               std::function<void()> onRestartDesktop,
-              std::function<void()> onStartBackend,
-              std::function<void()> onRestartBackend,
-              std::function<void()> onStopBackend,
               std::function<void()> onQuit,
               std::function<void()> onAbout,
               std::function<void()> onLog,
@@ -65,13 +65,6 @@ public:
 
     /// 是否显示"更新到最新版"菜单项。
     void setUpdateAvailable(bool available);
-
-    /// 更新"DSH 后台服务"分组的可管理状态。
-    ///
-    /// \param manageable 桌面端能否管理后台服务生命周期（External / 标记为
-    ///                   ``Unmanaged`` 或不可管理时为 false，禁用整个分组）。
-    /// \param running    后台服务当前是否在运行；用于按需启用"启动/停止/重启"。
-    void setBackendManageable(bool manageable, bool running);
 
     /// 显示 / 隐藏托盘图标。
     void show();
@@ -101,12 +94,7 @@ private:
     QAction* hideAct_{nullptr};
     QAction* checkAct_{nullptr};
     QAction* updateAct_{nullptr};
-    QAction* restartDesktopAct_{nullptr};
-    QMenu* backendMenu_{nullptr};          // "DSH 后台服务" 分组（子菜单）
-    QAction* backendSectionAct_{nullptr};  // 分组在 ``menu_`` 中的入口项
-    QAction* startServiceAct_{nullptr};
-    QAction* restartServiceAct_{nullptr};
-    QAction* stopServiceAct_{nullptr};
+    QAction* restartAct_{nullptr};
     QAction* logAct_{nullptr};
     QAction* clearAct_{nullptr};
     QAction* aboutAct_{nullptr};

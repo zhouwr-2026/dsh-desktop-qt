@@ -27,6 +27,27 @@ extern int qInitResources_icons();
 int main(int argc, char* argv[]) {
     // 立即注册嵌入资源（必须在构造任何 QIcon 之前）。
     qInitResources_icons();
+
+    // 把 IME 集成所需的环境变量补齐——尤其是 XMODIFIERS / QT_IM_MODULE /
+    // GTK_IM_MODULE / SDL_IM_MODULE。QtWebEngine 内部 Chromium 进程靠
+    // XMODIFIERS=@im=fcitx 跟 X server 上的输入法通讯；如果 dsh-desktop 是
+    // 由 systemd / dbus-run-session / 自启动拉起的，session 环境可能没带
+    // 这些变量，结果就是嵌入式 webview 里的输入框无法切换中英文。Qt 自身
+    // 输入控件靠 QT_IM_MODULE。两者必须都在，且在 QApplication 构造前
+    // 设好（之后 Chromium 子进程会继承）。
+    auto ensureEnvVar = [](const char* name, const char* defaultValue) {
+        if (qEnvironmentVariableIsEmpty(name)) {
+            qputenv(name, defaultValue);
+        }
+    };
+    // 用户的桌面常用 fcitx5；fcitx5 同时响应 @im=fcitx（XIM 协议）。
+    // 如果用户用 ibus，fcitx 也能正确指向实际 agent（fcitx5 兼容 ibus
+    // 客户端）。设置成 fcitx 不影响 ibus 用户。
+    ensureEnvVar("XMODIFIERS", "@im=fcitx");
+    ensureEnvVar("QT_IM_MODULE", "fcitx");
+    ensureEnvVar("GTK_IM_MODULE", "fcitx");
+    ensureEnvVar("SDL_IM_MODULE", "fcitx");
+
     QCoreApplication::setOrganizationName(QStringLiteral("anywhere-labs"));
     QCoreApplication::setApplicationName(QStringLiteral("dsh-desktop"));
     QCoreApplication::setApplicationVersion(QString::fromLatin1(DSH_DESKTOP_VERSION));

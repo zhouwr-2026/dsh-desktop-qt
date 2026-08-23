@@ -95,8 +95,10 @@ set(DSH_CORE_SOURCES
     src/updater/DesktopReleaseDownloader.cpp
     src/updater/UpdatePlan.cpp
     src/web/LoopbackWebPage.cpp
+    src/web/SuppressExportToast.cpp
     src/web/DownloadInterceptor.cpp
     src/app/ExitDialog.cpp
+    src/app/RestartDialog.cpp
     src/app/UpdateDialog.cpp
     src/app/AboutDialog.cpp
     src/app/UninstallDialog.cpp
@@ -130,8 +132,10 @@ set(DSH_CORE_HEADERS
     src/updater/DesktopReleaseDownloader.h
     src/updater/UpdatePlan.h
     src/web/LoopbackWebPage.h
+    src/web/SuppressExportToast.h
     src/web/DownloadInterceptor.h
     src/app/ExitDialog.h
+    src/app/RestartDialog.h
     src/app/UpdateDialog.h
     src/app/AboutDialog.h
     src/app/UninstallDialog.h

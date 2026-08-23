@@ -57,6 +57,9 @@ private:
     QString unitName_;
     QString url_;
     dsh::service::ServiceScope scope_{dsh::service::ServiceScope::System};
+    /// 最近一次失败的 systemctl start/stop/restart 的错误输出，供
+    /// ``status().detail`` 透传给上层错误提示。成功或新调用会被覆盖/清空。
+    QString lastOperationError_;
 };
 
 }  // namespace dsh::backend

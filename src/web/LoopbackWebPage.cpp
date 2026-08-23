@@ -34,9 +34,10 @@ bool LoopbackWebPage::isSameOrigin(const QUrl& left, const QUrl& right) {
 LoopbackWebPage::LoopbackWebPage(QWebEngineProfile* profile,
                                  const QUrl& applicationUrl,
                                  std::function<void(const QUrl&)> opener,
+                                 std::function<void(const QString&)> logSink,
                                  QObject* parent)
     : QWebEnginePage(profile, parent), applicationUrl_(applicationUrl),
-      opener_(std::move(opener)) {
+      opener_(std::move(opener)), logSink_(std::move(logSink)) {
     connect(this, &QWebEnginePage::newWindowRequested, this,
             [this](QWebEngineNewWindowRequest& request) {
         const QUrl url = request.requestedUrl();
@@ -46,14 +47,49 @@ LoopbackWebPage::LoopbackWebPage(QWebEngineProfile* profile,
             return;
         }
         const QString scheme = url.scheme().toLower();
-        if ((scheme == QStringLiteral("http")
-             || scheme == QStringLiteral("https")
-             || scheme == QStringLiteral("mailto")
-             || scheme == QStringLiteral("tel"))
-            && opener_) {
-            opener_(url);
-        }
+        const bool external =
+            scheme == QStringLiteral("http") || scheme == QStringLiteral("https")
+            || scheme == QStringLiteral("mailto") || scheme == QStringLiteral("tel");
+        if (external && opener_) opener_(url);
     });
+}
+
+void LoopbackWebPage::javaScriptAlert(const QUrl& securityOrigin,
+                                      const QString& msg) {
+    if (logSink_) {
+        logSink_(QStringLiteral("web: 静默吞掉 JS alert，origin=%1 msg=%2")
+                     .arg(securityOrigin.toString(), msg));
+    }
+    // 不弹任何对话框；空实现即视为"用户已关闭"。
+}
+
+bool LoopbackWebPage::javaScriptConfirm(const QUrl& securityOrigin,
+                                        const QString& msg) {
+    if (logSink_) {
+        logSink_(QStringLiteral("web: 静默拒绝 JS confirm（C++ 当作用户点了取消），"
+                                 "origin=%1 msg=%2")
+                     .arg(securityOrigin.toString(), msg));
+    }
+    // **安全默认 = 拒绝**（用户没有真正看到/确认原生对话框）。返回 false
+    // 让页面把 confirm 当作"用户取消"，避免静默放行删除/导航等破坏性动
+    // 作——自动接受曾导致嵌入式 webview 焦点被换走 / DOM 节点被替换，进
+    // 而把输入法的组合上下文打断（用户反馈的 IME 中英文切换失效）。如果
+    // DSH Web UI 后续确实依赖 confirm 自动推进，请用更具体的文案判断后
+    // 再决定接受/拒绝，不要再走无条件 auto-accept。
+    return false;
+}
+
+bool LoopbackWebPage::javaScriptPrompt(const QUrl& securityOrigin,
+                                       const QString& msg,
+                                       const QString& defaultValue,
+                                       QString* result) {
+    if (logSink_) {
+        logSink_(QStringLiteral("web: 静默拒绝 JS prompt，origin=%1 msg=%2")
+                     .arg(securityOrigin.toString(), msg));
+    }
+    Q_UNUSED(defaultValue);
+    if (result) *result = QString();
+    return false;
 }
 
 bool LoopbackWebPage::isInternal(const QUrl& url, const QUrl& applicationUrl) {
@@ -85,13 +121,14 @@ bool LoopbackWebPage::acceptNavigationRequest(const QUrl& url,
     Q_UNUSED(type);
     Q_UNUSED(isMainFrame);
     if (isInternal(url, applicationUrl_)) return true;
+    // 内部导航被拒。http/https/mailto/tel 走系统浏览器；其他 scheme
+    // （magnet: / javascript: / data: 等）一律拒绝。
     const QString scheme = url.scheme().toLower();
-    if (scheme == QStringLiteral("http") || scheme == QStringLiteral("https")
-        || scheme == QStringLiteral("mailto") || scheme == QStringLiteral("tel")) {
-        if (opener_) opener_(url);
-        return false;
-    }
-    return false;  // refuse all other external schemes too (magnet:, etc.)
+    const bool external =
+        scheme == QStringLiteral("http") || scheme == QStringLiteral("https")
+        || scheme == QStringLiteral("mailto") || scheme == QStringLiteral("tel");
+    if (external && opener_) opener_(url);
+    return false;
 }
 
 }  // namespace dsh::web

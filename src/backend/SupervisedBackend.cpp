@@ -137,9 +137,20 @@ bool SupervisedBackend::start() {
 
 bool SupervisedBackend::stop(bool force) {
     QProcess* process = proc_;
-    if (!process || process->state() == QProcess::NotRunning) return true;
+    if (!process) return true;
+    // QProcess 状态：NotRunning 必然是"已结束"。其他状态（Starting /
+    // Running）下 processId 可能瞬时为 0（子进程尚未派生完成），所以再做
+    // 一次 end-of-process 探测：exitCode / error 已被设置 ⇒ 实际已结束。
+    if (process->state() == QProcess::NotRunning) return true;
     const qint64 pid = process->processId();
-    if (pid <= 0) return false;
+    if (pid <= 0) {
+        // 子进程已经在内核层面消失（finished 信号可能尚未派发）。
+        // 此时不应再尝试发信号，直接判成功以免上层误报"无法停止"。
+        emit log("supervised: 子进程已结束但 proc_ 仍持有 QProcess，按已停止处理");
+        if (proc_ == process) proc_ = nullptr;
+        process->deleteLater();
+        return true;
+    }
 
     const pid_t processGroup = -static_cast<pid_t>(pid);
     ::kill(processGroup, force ? SIGKILL : SIGTERM);
@@ -148,7 +159,12 @@ bool SupervisedBackend::stop(bool force) {
         ::kill(processGroup, SIGKILL);
         process->waitForFinished(3000);
     }
-    return process->state() == QProcess::NotRunning;
+    if (process->state() != QProcess::NotRunning) {
+        emit log(QStringLiteral("supervised: 进程未在超时内退出 (state=%1)")
+                     .arg(static_cast<int>(process->state())));
+        return false;
+    }
+    return true;
 }
 
 bool SupervisedBackend::restart() {

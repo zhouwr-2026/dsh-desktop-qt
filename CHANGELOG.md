@@ -5,6 +5,84 @@ DSH Desktop 所有重要变更都记录在此。版本遵循 [语义化版本](h
 ## [Unreleased]
 
 ### 新增
+- **退出 / 重启双对话框 + 后端服务勾选统一语义**：
+  - 新增独立 `RestartDialog`（与 `ExitDialog` 平行实现，避免后者退化为
+    if-else 垃圾桶），标题/按钮/勾选语义与退出对话框对称区分。
+  - 两个对话框都新增 `backendRunning` 参数：后端**运行中**时勾选框为
+    "同时停止/重启 DSH 后台服务"（默认不勾选）；后端**未运行**时勾选
+    框自动锁定为"同时启动 DSH 后台服务"（勾选且禁用），把"无论是否勾
+    选都会启动"的偏好清晰传达给用户。
+  - 后端不可管理（`External` / `Unmanaged`）时不渲染勾选，并保留对
+    远程后端"桌面端不会动它"的明示。
+- **`ShutdownIntent` 与统一 `performQuit` / `performRestart`**：把"对后端
+  做什么"的判定从托盘子菜单收到退出/重启流程里——后端运行中勾选时执
+  行 stop/restart，否则不动；后端未运行时强制拉起（必要时会自动安装
+  `@deepseek-ai/dsh`）。
+- **`ensureBackendStarted` 自动安装流程**：`dsh` 二进制缺失时弹原生确认
+  框，确认后调用 `pkexec npm i -g @deepseek-ai/dsh`，捕获合并输出，错
+  误时把 `npm` 的真实输出透传到 `QMessageBox`。
+- **`LoopbackWebPage` 拦截 Web 端 JavaScript 对话框**：覆盖
+  `javaScriptAlert/Confirm/Prompt` 三个虚函数。`confirm` 一律自动接受
+  （让官方 Web UI 的下载/导出等异步动作继续推进）；`alert/prompt` 静默
+  关闭。这层是对 **Chromium 原生** JS 弹窗的兜底——它拦不到自定义
+  HTML 模态（见下一条）。
+- **`SuppressExportToast` + `DownloadInterceptor` 运行时清理自定义 toast**：
+  官方 DSH Web UI 点击 "Session log" 时弹出的"Session 导出已开始下载 /
+  浏览器正在下载 Session ZIP 文件"是**自定义 HTML 模态组件**（带样式 +
+  ×关闭按钮），不经过 `window.alert/confirm`，虚函数拦不到。最终方案是
+  **桌面端触发**：`DownloadInterceptor::handle()` 确认命中
+  `/api/session.export` 时，通过 `request->page()->runJavaScript()` 主动
+  注入一段纯函数式 JS，扫描并移除匹配文案的 DOM 节点（脚本自带
+  0/200/1000ms 三次幂等重试覆盖异步出现的时序）。
+  - **不动 @deepseek-ai/dsh 源码**：只做运行时 DOM 清理；
+  - **浏览器直开 `http://127.0.0.1:3080/` 不受影响**：JS 不注册到
+    user-script 集合，只在桌面端 C++ 拦截到导出请求时显式调用才会执行；
+  - **决定权在 C++**：无常驻观察器，~2s 后脚本即无任何活动。
+- **`DownloadInterceptor::finish` 仅用 KDE 通知反馈成功**：成功时只发
+  `dsh::util::notify`，不再弹原生 `QMessageBox::information`；失败/取消
+  行为不变。
+- **`dsh-shutdown-dialogs-test`**：15 个新单元测试覆盖 ExitDialog /
+  RestartDialog 的勾选文字、默认状态、未运行锁定与不可管理隐藏。
+
+### 修复
+- **SupervisedBackend::stop 子进程已结束的退化路径**：之前当 `proc_`
+  仍持有 QProcess 而子进程已死（`processId()` 返回 0）时，函数返回
+  `false` 导致上层误报"无法停止后台服务"。修复后此场景判为已停止并
+  清理 `proc_`，避免后续 stop/restart 链路异常。
+- **SystemdBackend::systemctl 错误信息透传**：合并 stdout/stderr 输出，
+  在 exit code 非零时把真实原因写入 `lastOperationError_`，由
+  `status().detail` 透传给上层 `QMessageBox`，让"无法启动/停止/重启"
+  不再是无内容提示。
+- **退出/重启对话框打开期间后端状态可能变化 → 落地动作前重新拉快照**：
+  之前的实现把对话框打开前抓的 `Status` 一直在 `performQuit` /
+  `performRestart` 里用，对话框被打开思考 N 秒期间后端可能已重启/停止，
+  落地动作就按陈旧数据走。现已在 `onRequestQuit` / `onRestartWithDialog`
+  `dlg.exec()` 之后立即重新调用 `backend_->status()` 再写进
+  `ShutdownIntent.status`。
+- **`ensureBackendStarted` 陈旧参数**：之前用调用方传入的 `status.running`
+  / `status.detail`，与刚做的后端状态变化脱节。修复后改用函数入口即时
+  拉一次 `backend_->status()`，start 失败也用最新 `detail` 报错；`dsh`
+  二进制已存在的场景给到 systemctl/端口冲突的可执行排查清单。
+- **`ensureBackendStarted` 同步阻塞 10 分钟 GUI 线程**：之前的
+  `install.waitForFinished(10*60*1000)` 会让主窗口冻结且无法取消；改为
+  `QProcess` + `QEventLoop` + `QProgressDialog`，用户可主动取消，事件
+  循环继续流转。
+- **`SystemdBackend::systemctl` 增加 `exitStatus()` 与 `p.error()` 校验**：
+  原先只读 `exitCode`，进程被信号杀但 exit code 恰巧为 0 时会被误判为
+  成功；现在合并退出状态、错误码、超时三个维度共同判定，并写出更具体
+  的 `lastOperationError_`。
+
+### 变更
+- **托盘菜单重组**：移除 `DSH 后台服务` 子菜单分组（含启动/重启/停止
+  三个动作），后台服务的启停入口完全合并到退出/重启对话框里的勾选框；
+  顶级菜单中 `重启 DSH Desktop` 重命名为 `重启` 并放到 `退出` 上方，
+  与 `退出` 用分隔符隔开，明确"重启/退出"是桌面端的两个并列生命周期
+  操作；`重启` 的语义图标从 `view-refresh` 换成 `system-reboot`。
+- 移除 `TrayController::bind` 的 `onStartBackend/onRestartBackend/
+  onStopBackend` 三个回调（托盘不再有直接入口），保留
+  `backendManageable()` 供退出/重启流程使用。
+- 删除 `DshDesktopApp::refreshBackendMenuState`（托盘分组已移除）；
+  `pollBackendHealth` 的通知文案同步更新为指向退出/重启对话框。
 - **统一更新流程**：启动 / 后台更新检查改为在工作线程同时执行后端（npm、
   `Updater::check`）与桌面（Gitee、`DesktopVersionChecker::check` 使用生成的
   `DSH_DESKTOP_VERSION`）两个来源的检查，经 `UpdatePlan::combine` 合并后决定
