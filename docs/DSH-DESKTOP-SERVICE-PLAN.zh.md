@@ -6,6 +6,36 @@
 - 本文性质：需求理解、架构设计、实施边界与验收标准
 - 重要约束：用户确认前只审核和修订本文，不修改业务代码、不执行安装器、不改变系统服务
 
+## 0. 实现状态与范围（重要）
+
+本文是**设计方案**，不是现状文档；其描述的"统一服务管理"大多数仍是目标状态，
+尚未全部落地到当前代码。请据此区分"已实现"与"规划中"：
+
+**已实现（当前运行时代码）：**
+
+- 只读服务发现与选择（`ServiceDiscovery` + `SystemctlShowParser`）：`LoadState=loaded`
+  且 `ExecStart` 调用官方 `dsh web` 才复用；两者都有效时优先当前用户的用户级 unit；
+  `ServiceOwnership` 记录由桌面端补齐的 unit 归属；`applyServiceMetadata` 派生
+  scope/state/owner/failureReason。
+- 对 inactive/failed 既有官方服务的**运行时就地授权**（`requiresStartConfirmation`）。
+- 后端三种形态：`SystemdBackend` / `SupervisedBackend` / 外部远程模式。
+- 统一后端 + 桌面更新（`UpdatePlan` / `UpdateDialog` / `DesktopVersionChecker` /
+  `DesktopReleaseDownloader` / `dsh-desktop-updater`）。
+- 托盘 `DSH 后台服务` 分组（启动 / 重启 / 停止，按可管理性启用）。
+
+**规划中（模型/测试已就绪，或仍停留在设计）：**
+
+- `InstallationPlan`（检测—复用—补齐的确定性决策模型）与其单元测试：决策模型已存在，
+  尚未驱动安装器或运行 UI。
+- `ServiceUnitBuilder`（生成标准 `dsh-web.service` 单元文本）与其单元测试：尚未用于真实补齐。
+- 安装阶段真正"补齐"一个新的 `dsh-web.service`（由桌面端创建并记录归属）：
+  `install.sh` 目前仍是基础检测 + `enable --now`，不创建新 unit。
+- 更完整的统一服务管理界面（服务日志、配置摘要、安装期授权流程、卸载"同时移除后台
+  服务"复选框）。
+- 第 2–10 节的安装、退出、卸载、更新编排细节，大部分属于目标设计，需用户确认后实施。
+
+因此下文既有"当前已实现"的描述，也有"目标应实现"的要求，请结合本节判断。
+
 ## 1. 产品定位
 
 DSH Desktop 不是把 DSH Web 页面重新打包成一个独立应用，也不维护第二套 DSH 后台。它是官方 DSH 后台服务的原生桌面管理端：

@@ -7,7 +7,7 @@
 
 参考实现 <https://github.com/anywhere-labs/deepseek-harness-desktop>
 只提供 Windows / macOS 安装包，且依赖 Electron。本项目用 **Qt6 + KDE 原
-> 生接口**提供同等体验，且完全用 C++ 实现，零运行时 Python 依赖。
+生接口**提供同等体验，且完全用 C++ 实现，零运行时 Python 依赖。
 
 ## 特性（对照需求 1–6）
 
@@ -16,7 +16,7 @@
 | 1. 原生 Linux 栈 | C++17 + Qt6 6.5+ + KDE Plasma 6 的 `StatusNotifierItem` 协议 + `org.freedesktop.*` D-Bus；不引入 Electron / Tauri。 |
 | 2. 常驻托盘 + 菜单 | `QSystemTrayIcon` + `QMenu`；菜单含 `显示桌面 / 隐藏桌面 / 检查更新 / 更新到最新版（仅在发现新版本时显示） / 重启 DSH Desktop / DSH 后台服务（启动后台服务 / 重启后台服务 / 停止后台服务）/ 查看日志 / 清空下载缓存 / 关于 / 退出`。 |
 | 3. 退出原生对话框 + 后台服务勾选 | `QDialog` + `QCheckBox`；检测到活跃任务时显式高亮提示；勾选后才调 `systemctl stop dsh-web.service`（polkit 弹框）。 |
-| 4. 黑/白鲸鱼 SVG 主题自适应 | 鲸鱼路径直接来自 <https://github.com/deepseek-ai/deepseek-harness/blob/master/website/public/favicon.svg>；**重新设计为"五彩斑斓的黑"**：主体深色渐变填充（墨蓝→深蓝）+ 六色霓虹彩虹描边（红橙黄绿蓝紫），覆盖率从 0.64% 提升到 62%，在暗色主题下依然醒目；白色版为白鲸 + 彩虹描边；`ThemeWatcher` 同时监听 Qt `QStyleHints.colorScheme()`、KDE `~/.config/kdeglobals` 与 `~/.config/plasmarc`、`org.freedesktop.portal.Settings`；托盘 / 窗口 / 任务栏统一跟随；远程 xrdp 场景可用 `--theme dark` 强制暗色。 |
+| 4. 黑/白鲸鱼 SVG 主题自适应 | 图标为**纯色**黑/白小鲸鱼 SVG（单一 path，fill 分别为 `#000000` / `#FFFFFF`），`assets/dsh-whale-{black,white}.svg` 为唯一 canonical 来源，经 `assets/icons.qrc` 内嵌到二进制，**全链路仅 SVG、无任何 PNG 位图变体**；`ThemeWatcher` 优先读 KDE 配置（`LookAndFeelPackage` / `ColorScheme`，含跨用户会话导出的主题标记），辅以 Qt `QStyleHints.colorScheme()`、`org.freedesktop.portal.Settings` 与 QPalette 兜底；托盘 / 窗口 / 任务栏 / 关于 对话框统一跟随；远程 xrdp 场景可用 `--theme dark` 强制暗色。 |
 | 5. session-logs 下载 | `QWebEngineProfile::downloadRequested` 拦截 `/api/session.export?sessionId=...`；弹原生保存对话框；由 WebEngine 原生下载保留 Cookie、代理和证书状态，并显示 `QProgressDialog`；完成后弹原生提示和 KDE 通知。 |
 | 6. 外部链接走系统浏览器 | 自定义 `LoopbackWebPage::acceptNavigationRequest` 只允许应用精确同源导航；其他 HTTP(S)、`mailto:` 与 `tel:` 交给 `QDesktopServices::openUrl`，并拒绝 `file:`、`javascript:` 等危险 scheme。 |
 
@@ -24,7 +24,7 @@
 
 * Arch Linux（或其他基于 Arch 的发行版）
 * KDE Plasma 6（Breeze 主题；GNOME 也兼容但体验略逊）
-* Qt6 ≥ 6.5（base + webengine + dbus + svg）
+* Qt6 ≥ 6.5（base + webengine + dbus + svg）—— `ForceDarkMode`（强制 Chromium 渲染暗色）需 Qt 6.7 起提供，项目以编译期 `QT_VERSION` 宏保护；在 Qt 6.5/6.6 上退化为不做强制反色（见 `applyForceDarkMode`）。
 * 已安装的 `dsh` 包（≥ 0.1.0-rc.7）—— 通过 `npm i -g @deepseek-ai/dsh` 安装
 
 ## 安装
@@ -40,7 +40,9 @@ sudo packaging/install.sh
 3. 在仓库固定的 `build/` 目录中使用 CMake + Ninja 构建并安装到 `/usr`。
 4. 注册黑/白鲸鱼图标并刷新图标缓存。
 5. 安装应用菜单、自启动项和主题导出服务。
-6. 若 `dsh-web.service` 已存在则启用并启动。
+6. 检测并复用已有的 `dsh-web.service`（只读校验）；对已存在但 inactive/failed
+   的既有官方服务，启用/启动的决策交由桌面端在运行时先询问用户，而不是由
+   安装器无条件强制拉起。
 
 也可以打成 Arch 包：
 
@@ -100,24 +102,57 @@ dsh-desktop --theme dark
 | 后端健康监控 | 每 30 秒探测 dsh-web 状态；停止/恢复时通过 KDE 通知告知用户 |
 | 托盘 Tooltip | 鼠标悬停托盘图标时仅显示应用名称 `DSH Desktop`，不暴露内部实现或服务地址 |
 | 清空下载缓存 | 托盘"清空下载缓存"项；双层确认（先看文件数 + 二次弹 QMessageBox） |
-| systemd unit 自动检测 | 优先 systemd 模式；找不到 `dsh-web.service` 时回退到 `dsh web` 子进程 |
+| 统一后端 + 桌面更新 | 启动 60 秒后与托盘"检查更新"都在后台线程同时检查后端（npm 上的 `dsh`）与桌面（Gitee 发布）两个来源，经 `UpdatePlan::combine` 合并为唯一"更新到最新版"；`UpdateDialog` 同时展示两个组件、默认勾选全部可更新项（后端优先），用不定量进度条；桌面组件下载选中资产并校验 SHA-256 后交给 `dsh-desktop-updater`，原子替换运行中二进制且不停止后台服务 |
+| SVG-only 图标 | `assets/dsh-whale-{black,white}.svg` 为唯一 canonical 来源；`install.sh` 仅安装 SVG（不再用 `rsvg-convert` 生成 PNG 位图）；卸载时顺带清理旧版遗留 PNG |
+| systemd unit 自动检测（只读校验） | 对系统域与当前用户域各做一次只读 `systemctl show`，校验 `LoadState=loaded` 且 `ExecStart` 调用官方 `dsh web` 后才复用；两者都有效时优先当前用户的用户级 unit；找不到有效 unit 才回退 `dsh web` 子进程。已存在但 inactive/failed 的既有官方服务先询问用户再启动 |
 | polkit 提权 | 升级时通过系统 `pkexec` 默认策略弹出管理员认证，不安装无效的自定义 action |
 
 ## 后端管理策略
 
-桌面端按环境选择后端生命周期策略：优先委托现有
-`dsh-web.service`（systemd）；找不到 unit 时直接拉起并监管 `dsh web`
-子进程；显式远程 URL 则完全不管理其生命周期：
+桌面端按环境选择后端生命周期策略：对 loopback 地址先做一次**只读实况发现**
+（对系统域与当前用户域各执行一次 `systemctl show`），仅当 `LoadState=loaded`
+且 `ExecStart` 调用官方 `dsh web` 时才复用该 unit；两者都有效时优先当前用户的
+用户级 unit；找不到有效 unit 时直接拉起并监管 `dsh web` 子进程；显式远程 URL
+则完全不管理其生命周期：
 
-* 启动时若 `http://127.0.0.1:3080` 不通，托盘会弹原生警告并尝试
-  `systemctl start dsh-web.service`；仍然失败则窗口依然打开但显示空白。
+* 启动时若 `http://127.0.0.1:3080` 不通，且已发现的是有效的既有官方 systemd
+  服务，桌面端**不会无条件启动**：先弹原生确认框询问用户（inactive/failed 时
+  均提示），用户点"是"才调用 `systemctl start`，点"否"则保持停止、继续打开
+  桌面端。仍然失败则窗口依然打开但显示空白。
 * 托盘 `重启 DSH Desktop` 用 `QProcess::startDetached` 重新拉起当前可执行文件
   并退出，不影响后台服务；`DSH 后台服务` 分组里的 `启动 / 重启 / 停止后台服务`
-  分别调用后端的 start/restart/stop，停止前弹原生确认。
+  分别调用后端的 start/restart/stop，仅在可管理时启用，停止前弹原生确认。
 * 退出对话框的 `同时停止后台 dsh web 服务` 勾选框勾选后才执行
   `systemctl stop dsh-web.service`（polkit 弹框）。
-* 当 `dsh-web.service` 未安装时，桌面端自动回退到 `dsh web` 子进程模式，
-  退出对话框的勾选框变为 `同时停止由桌面端拉起的 dsh web 子进程`。
+* 当 `dsh-web.service` 未安装或未通过校验时，桌面端自动回退到 `dsh web`
+  子进程模式，退出对话框的勾选框变为 `同时停止由桌面端拉起的 dsh web 子进程`。
+
+### 已实现 vs 规划中的服务管理部分
+
+**已实现（运行时代码）：**
+
+* `Backend` 抽象 + 三种形态：`SystemdBackend` / `SupervisedBackend` / 外部远程模式。
+* 只读服务发现：`ServiceDiscovery` + `SystemctlShowParser` 校验并选择 unit
+  （`LoadState` + 官方入口验证、用户级优先）、`ServiceOwnership` 记录自建 unit
+  归属、`applyServiceMetadata` 派生 scope/state/owner/failureReason。
+* 对 inactive/failed 既有官方服务的**运行时就地授权**（`requiresStartConfirmation`
+  → 原生确认框）。
+* 托盘的 `DSH 后台服务` 分组（启动 / 重启 / 停止，按可管理性启用）。
+* 统一后端 + 桌面更新（`UpdatePlan` / `UpdateDialog` / `DesktopVersionChecker` /
+  `DesktopReleaseDownloader` / `dsh-desktop-updater`）。
+
+**仅模型/测试，尚未接入安装器或 UI（规划中）：**
+
+* `InstallationPlan`（检测—复用—补齐 的确定性决策模型）与其单元测试 —— 决策
+  模型已就绪，尚未驱动安装器或运行 UI。
+* `ServiceUnitBuilder`（生成标准 `dsh-web.service` 单元文本）与其单元测试 ——
+  尚未用于真实补齐。
+* 安装阶段真正"补齐"一个新的 `dsh-web.service`（由桌面端创建并记录归属）——
+  未实现；`install.sh` 目前仍是基础检测 + `enable --now`，不创建新 unit。
+* 更完整的统一服务管理界面（服务日志、配置摘要、安装期授权流程、卸载时"同时
+  移除后台服务"复选框）。
+
+完整目标设计见 [docs/DSH-DESKTOP-SERVICE-PLAN.zh.md](docs/DSH-DESKTOP-SERVICE-PLAN.zh.md)。
 
 ## 构建与运行
 
@@ -172,9 +207,11 @@ DSH-Desktop/
 │   ├── main.cpp                 # 入口
 │   ├── app/                     # DshDesktopApp / DshWindow / TrayController / Dialogs
 │   ├── backend/                 # Backend 抽象 + SystemdBackend + SupervisedBackend
+│   ├── service/                 # 只读服务发现 / 所有权 / 安装决策模型
+│   ├── platform/                # RenderingPolicy（X11/xrdp 软件渲染）
 │   ├── icon/                    # IconLoader
 │   ├── theme/                   # ThemeWatcher
-│   ├── updater/                 # Updater (npm registry + pkexec)
+│   ├── updater/                 # Updater + UpdatePlan + 桌面自更新助手
 │   ├── util/                    # Logger / Notify (D-Bus)
 │   └── web/                     # LoopbackWebPage + DownloadInterceptor
 ├── assets/                      # 黑白鲸鱼 SVG（嵌入到二进制）

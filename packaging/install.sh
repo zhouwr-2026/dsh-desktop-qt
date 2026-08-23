@@ -9,8 +9,13 @@
 #   1. 用 pacman 装齐运行时依赖（PyQt 已不需要——本版本是 C++/Qt6 原生）
 #   2. 用 npm 装 dsh CLI（如已装则跳过）
 #   3. cmake 构建并 ninja install 到 /usr
-#   4. 注册黑白鲸鱼 SVG 到 hicolor / Breeze 图标主题（仅 SVG，无量位图 PNG）
-#   5. 若 dsh-web.service 已存在则启用并启动
+#   4. 注册黑白鲸鱼 SVG 到 hicolor / Breeze 图标主题（仅 SVG，无量位图 PNG；
+#      canonical 单一来源为 assets/dsh-whale-{black,white}.svg，与 CMake 一致）
+#   5. 只读探测 dsh-web.service（system scope，user 可用时一并检查）：
+#      仅当 LoadState=loaded 且 ExecStart 为官方 `dsh web` 时接受该单元；
+#      active 视为复用，inactive/failed 视为存在但未启动（由桌面端在运行时征询同意），
+#      外部/非官单元视为不受管理且不改动，缺失视为未配置（桌面端走已验证的备用/自建路径）。
+#      本脚本绝不启停/启用/禁用任何已存在的 DSH 服务。
 
 set -euo pipefail
 
@@ -115,17 +120,58 @@ install_desktop_file() {
   fi
 }
 
+is_official_dsh_web() {
+  # 判定 systemd 单元的 ExecStart 是否调用官方 `dsh web`（dsh CLI 的 web 子命令）。
+  # 入参：systemctl show --property=ExecStart --value 的输出。
+  local execstart="$1"
+  [[ -n "$execstart" ]] || return 1
+  # 匹配形如 "<可选项>/dsh web <…>" 或 "dsh web <…>" 的命令行；
+  # 命令名 basename 必须恰好是 dsh，且后紧跟子命令 web（含 dsh 的其他名字不匹配）。
+  if [[ "$execstart" =~ (^|[[:space:]])([^[:space:]]+/)?dsh[[:space:]]+web([[:space:]]|$) ]]; then
+    return 0
+  fi
+  return 1
+}
+
 configure_dsh_service() {
-  log "检查 dsh-web.service（systemd）"
-  if systemctl list-unit-files dsh-web.service >/dev/null 2>&1; then
-    if ! systemctl is-enabled --quiet dsh-web.service 2>/dev/null; then
-      log "启用并启动 dsh-web.service"
-      systemctl enable --now dsh-web.service
-    else
-      log "dsh-web.service 已启用"
+  log "检查 dsh-web.service（systemd，只读探测，不改动任何已存在的 DSH 服务）"
+
+  # 需要探测的 systemd scope：system 始终检查；user 会话可用时一并检查。
+  local scopes=("--system")
+  if systemctl --user show >/dev/null 2>&1; then
+    scopes+=("--user")
+  fi
+
+  local scope found_any=0
+  for scope in "${scopes[@]}"; do
+    local loadstate activestate execstart
+    loadstate="$(systemctl "$scope" show --property=LoadState --value dsh-web.service 2>/dev/null || true)"
+    # 该 scope 下未配置（LoadState=not-found 或查询失败）则跳过。
+    if [[ -z "$loadstate" || "$loadstate" == "not-found" ]]; then
+      continue
     fi
-  else
-    warn "未发现 dsh-web.service；桌面端会改用 'dsh web' 子进程模式"
+    found_any=1
+
+    activestate="$(systemctl "$scope" show --property=ActiveState --value dsh-web.service 2>/dev/null || true)"
+    execstart="$(systemctl "$scope" show --property=ExecStart --value dsh-web.service 2>/dev/null || true)"
+
+    # 仅接受 LoadState=loaded 且 ExecStart 为官方 `dsh web` 的单元。
+    if [[ "$loadstate" == "loaded" ]] && is_official_dsh_web "$execstart"; then
+      case "$activestate" in
+        active|activating|reloading)
+          log "检测到官方 dsh-web.service（$scope）正在运行：直接复用，不再重复启动"
+          ;;
+        *)
+          warn "检测到官方 dsh-web.service（$scope）存在但当前未运行（$activestate）；本脚本不擅自启动，DSH Desktop 将在运行时询问你的同意"
+          ;;
+      esac
+    else
+      warn "检测到 dsh-web.service（$scope）存在，但其配置并非官方 'dsh web'（LoadState=$loadstate）；视为外部/不受管单元，本脚本不会改动它"
+    fi
+  done
+
+  if (( found_any == 0 )); then
+    warn "系统未配置 dsh-web.service（systemd）；桌面端将使用其已验证的备用/自建路径"
   fi
 }
 
