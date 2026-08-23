@@ -134,3 +134,13 @@ target_include_directories(dsh-installation-plan-test PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/../src
 )
 add_test(NAME installation-plan COMMAND dsh-installation-plan-test)
+
+# 自更新助手测试：纯校验/原子替换逻辑，仅依赖 Qt Core + 助手静态库。
+add_executable(dsh-update-helper-test test_update_helper.cpp)
+target_link_libraries(dsh-update-helper-test PRIVATE
+    Qt6::Core Qt6::Test dsh_desktop_updater_helper
+)
+target_include_directories(dsh-update-helper-test PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src
+)
+add_test(NAME update-helper COMMAND dsh-update-helper-test)

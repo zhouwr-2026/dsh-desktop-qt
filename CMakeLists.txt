@@ -155,11 +155,46 @@ target_compile_options(dsh-desktop PRIVATE
 )
 
 # ---------------------------------------------------------------------------
+# 自更新助手核心（仅依赖 Qt Core，供 CLI 与单元测试复用）
+# ---------------------------------------------------------------------------
+
+# 独立小型静态库：纯校验/原子替换逻辑，不依赖 Widgets/WebEngine/DBus/进程，
+# 保证 ``dsh-desktop-updater`` CLI 与测试都只带最小依赖即可复用。
+add_library(dsh_desktop_updater_helper STATIC
+    src/updater/DesktopUpdateHelper.cpp
+    src/updater/DesktopUpdateHelper.h
+)
+target_include_directories(dsh_desktop_updater_helper PUBLIC
+    ${CMAKE_CURRENT_SOURCE_DIR}/src
+)
+target_link_libraries(dsh_desktop_updater_helper PUBLIC
+    Qt6::Core
+)
+target_compile_options(dsh_desktop_updater_helper PRIVATE
+    $<$<CXX_COMPILER_ID:GNU,Clang>:-Wall -Wextra -Wpedantic -Wshadow>
+)
+
+# 独立自更新助手 CLI：由旧实例退出前拉起，等待 PID 退出 -> 校验 -> 原子替换。
+add_executable(dsh-desktop-updater
+    src/updater/DesktopUpdateHelperMain.cpp
+)
+target_link_libraries(dsh-desktop-updater PRIVATE
+    dsh_desktop_updater_helper
+    Qt6::Core
+)
+target_compile_options(dsh-desktop-updater PRIVATE
+    $<$<CXX_COMPILER_ID:GNU,Clang>:-Wall -Wextra -Wpedantic -Wshadow>
+)
+
+# ---------------------------------------------------------------------------
 # 安装
 # ---------------------------------------------------------------------------
 
 include(GNUInstallDirs)
 install(TARGETS dsh-desktop
+    RUNTIME DESTINATION "${CMAKE_INSTALL_BINDIR}"
+)
+install(TARGETS dsh-desktop-updater
     RUNTIME DESTINATION "${CMAKE_INSTALL_BINDIR}"
 )
 install(FILES packaging/dsh-desktop.desktop
