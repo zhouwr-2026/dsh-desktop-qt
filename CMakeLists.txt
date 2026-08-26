@@ -2,14 +2,17 @@
 #
 # DSH Desktop — KDE Plasma 6 上的 DSH Web 原生包装器
 #
-# 构建：
-#   mkdir build && cd build
-#   cmake -DCMAKE_BUILD_TYPE=Release ..
-#   ninja
+# 开发构建：
+#   cmake --preset dev
+#   cmake --build build/dev --parallel
+#   ctest --test-dir build/dev --output-on-failure
+# Release 构建：
+#   cmake --preset release
+#   cmake --build build/release --parallel
 #
-# 安装（用户级）：
-#   DESTDIR=$HOME/.local ninja install
-# 或作为系统包（packaging/PKGBUILD）：
+# 安装（系统级或作为 packaging/PKGBUILD 的打包输入）：
+#   cmake --install build/release
+# 或作为 Arch 系统包：
 #   makepkg -si
 
 cmake_minimum_required(VERSION 3.19)

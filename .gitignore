@@ -21,6 +21,7 @@ Makefile
 .ninja_log
 build.ninja
 compile_commands.json
+CMakeUserPresets.json
 
 # Editor / IDE
 .vscode/

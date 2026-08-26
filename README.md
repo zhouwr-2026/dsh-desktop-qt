@@ -87,10 +87,20 @@ the running binary in place (with a `--pid` / `--source` / `--destination` /
 ## Build and test
 
 ```sh
-cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release
-cmake --build build --parallel
-ctest --test-dir build --output-on-failure
+# Development: RelWithDebInfo plus the full test suite
+cmake --preset dev
+cmake --build build/dev --parallel
+ctest --test-dir build/dev --output-on-failure
+
+# Packaging and deployment: Release with a /usr install prefix
+cmake --preset release
+cmake --build build/release --parallel
+ctest --test-dir build/release --output-on-failure
 ```
+
+The shared presets only generate `build/dev/` and `build/release/`. Put local
+overrides in the ignored `CMakeUserPresets.json` instead of creating additional
+`cmake-build-*` trees.
 
 Useful diagnostic modes:
 

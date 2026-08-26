@@ -37,7 +37,7 @@ sudo packaging/install.sh
 
 1. 用 pacman 装齐运行时依赖（包括 `qt6-base`、`qt6-webengine`、`qt6-svg`、`npm`、`polkit`）。
 2. 通过 npm 安装 `@deepseek-ai/dsh`（若已装则跳过）。
-3. 在仓库固定的 `build/` 目录中使用 CMake + Ninja 构建并安装到 `/usr`。
+3. 使用 `release` preset 在 `build/release/` 中构建并安装到 `/usr`。
 4. 注册黑/白鲸鱼图标并刷新图标缓存。
 5. 安装应用菜单、自启动项和主题导出服务。
 6. 检测并复用已有的 `dsh-web.service`（只读校验）；对已存在但 inactive/failed
@@ -163,11 +163,20 @@ dsh-desktop --theme dark
 ## 构建与运行
 
 ```sh
-cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release
-cmake --build build --parallel
-ctest --test-dir build --output-on-failure
-build/dsh-desktop --smoke
+# 日常开发：RelWithDebInfo + 完整测试
+cmake --preset dev
+cmake --build build/dev --parallel
+ctest --test-dir build/dev --output-on-failure
+build/dev/dsh-desktop --smoke
+
+# 发布/部署：Release + /usr 安装前缀
+cmake --preset release
+cmake --build build/release --parallel
+ctest --test-dir build/release --output-on-failure
 ```
+
+共享 preset 固定只生成 `build/dev/` 和 `build/release/`；个人覆盖写入不提交的
+`CMakeUserPresets.json`，不要再创建 `cmake-build-*` 等临时构建树。
 
 图形模式默认拒绝 root 运行，以避免关闭 Chromium 沙箱。仅在已隔离并明确承担风险的环境中设置 `DSH_DESKTOP_ALLOW_ROOT=1`。
 
@@ -176,7 +185,8 @@ build/dsh-desktop --smoke
 ```sh
 DSH_DESKTOP_DEBUG=1 dsh-desktop   # 暂未启用，预留位
 # 日志默认写入 XDG AppDataLocation，可用 --log-file 覆盖
-QT_QPA_PLATFORM=offscreen ./dsh-desktop --self-test  # 离屏自检
+env -u DISPLAY -u WAYLAND_DISPLAY QT_QPA_PLATFORM=offscreen \
+  build/dev/dsh-desktop --self-test  # 离屏自检
 ```
 
 更新 `@deepseek-ai/dsh` 或第三方 profile 插件后，建议立即运行
@@ -219,6 +229,10 @@ sudo packaging/install.sh --uninstall
 ```
 DSH-Desktop/
 ├── CMakeLists.txt
+├── CMakePresets.json              # dev / release 共享构建入口
+├── build/                         # Git 忽略的生成目录
+│   ├── dev/                       # RelWithDebInfo + 测试
+│   └── release/                   # Release + 部署/打包
 ├── src/                         # C++ 源码
 │   ├── main.cpp                 # 入口
 │   ├── app/                     # DshDesktopApp / DshWindow / TrayController / Dialogs

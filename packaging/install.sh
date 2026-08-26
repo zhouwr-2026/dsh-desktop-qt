@@ -33,6 +33,14 @@ need_root() {
   fi
 }
 
+run_build_command() {
+  if [[ -n "${SUDO_USER:-}" && "${SUDO_USER}" != root ]]; then
+    sudo -u "${SUDO_USER}" -- "$@"
+  else
+    "$@"
+  fi
+}
+
 # ---- 步骤 ----
 
 ensure_pkgs() {
@@ -68,16 +76,14 @@ ensure_pkgs() {
 }
 
 build_cmake() {
-  log "cmake 构建"
-  cmake -S "$ROOT" -B "$ROOT/build" -G Ninja \
-      -DCMAKE_BUILD_TYPE=Release \
-      -DCMAKE_INSTALL_PREFIX=/usr
-  cmake --build "$ROOT/build" --parallel
+  log "release preset 构建"
+  (cd "$ROOT" && run_build_command cmake --preset release)
+  run_build_command cmake --build "$ROOT/build/release" --parallel
 }
 
 install_artifacts() {
   log "安装到 /usr"
-  DESTDIR= cmake --install "$ROOT/build" --prefix /usr
+  DESTDIR= cmake --install "$ROOT/build/release" --prefix /usr
 }
 
 install_icons() {

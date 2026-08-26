@@ -32,14 +32,12 @@ sha256sums=('SKIP')
 
 build() {
     cd "$pkgname-$pkgver"
-    cmake -B build -S . -G Ninja \
-        -DCMAKE_BUILD_TYPE=Release \
-        -DCMAKE_INSTALL_PREFIX=/usr
-    ninja -C build
+    cmake --preset release
+    cmake --build build/release --parallel
 }
 
 package() {
     cd "$pkgname-$pkgver"
-    DESTDIR="$pkgdir" ninja -C build install
+    DESTDIR="$pkgdir" cmake --install build/release
     install -Dm644 LICENSE "$pkgdir/usr/share/licenses/$pkgname/LICENSE"
 }
