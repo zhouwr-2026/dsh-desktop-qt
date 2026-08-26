@@ -7,6 +7,7 @@
 #include <QDir>
 #include <QProcess>
 #include <QStandardPaths>
+#include <QStringList>
 #include <QUrl>
 
 namespace dsh::backend {
@@ -101,6 +102,46 @@ void applyServiceMetadata(Status& status,
             ? QStringLiteral("ActiveState=failed")
             : QStringLiteral("ActiveState=failed, SubState=%1").arg(info.subState);
     }
+}
+
+QString profileRepairHint(const QString& journalSummary) {
+    QStringList hints;
+    if (journalSummary.contains(QStringLiteral("ERR_MODULE_NOT_FOUND"))
+        || journalSummary.contains(QStringLiteral("Cannot find module"))) {
+        hints.append(QStringLiteral(
+            "检测到 DSH profile 插件构建产物缺失。先运行 `dsh-profile-check`；"
+            "修复可执行 `dsh plugin --profile web install`。若重装后仍缺失，应改用"
+            "包含构建产物的发布包或显式构建该插件，反复重启不能修复缺失文件。"));
+    }
+    if (journalSummary.contains(
+            QStringLiteral("initial connection or tool synchronization failed"))) {
+        hints.append(QStringLiteral(
+            "检测到辅助 MCP 初始化失败。非关键 MCP 应设置 `failOnStartupError: false` "
+            "并启用重连，避免工具故障中断 DSH Web 和正在执行的任务。"));
+    }
+    return hints.join(QStringLiteral("\n"));
+}
+
+bool backendHealthObservationStable(bool running,
+                                    int& consecutiveFailures,
+                                    int failureThreshold) {
+    if (running) {
+        consecutiveFailures = 0;
+        return true;
+    }
+    ++consecutiveFailures;
+    return consecutiveFailures >= qMax(1, failureThreshold);
+}
+
+QString systemdInvocationJournalMatch(const QString& invocationId) {
+    if (invocationId.size() != 32) return {};
+    for (const QChar character : invocationId) {
+        const ushort code = character.unicode();
+        const bool hexadecimal = (code >= '0' && code <= '9')
+            || (code >= 'a' && code <= 'f') || (code >= 'A' && code <= 'F');
+        if (!hexadecimal) return {};
+    }
+    return QStringLiteral("_SYSTEMD_INVOCATION_ID=") + invocationId.toLower();
 }
 
 bool requiresStartConfirmation(const Status& status) {

@@ -104,6 +104,11 @@ target_include_directories(dsh-backend-status-test PRIVATE
 )
 add_test(NAME backend-status COMMAND dsh-backend-status-test)
 
+add_test(NAME profile-checker
+    COMMAND bash ${CMAKE_CURRENT_SOURCE_DIR}/test_profile_checker.sh
+                 ${CMAKE_CURRENT_SOURCE_DIR}/../scripts/check-dsh-profile.sh
+)
+
 # 统一更新计划模型测试：纯数据合并，不触发网络/进程/UI，可稳定运行。
 add_executable(dsh-update-plan-test test_update_plan.cpp)
 target_link_libraries(dsh-update-plan-test PRIVATE

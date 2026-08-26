@@ -863,6 +863,18 @@ void DshDesktopApp::pollBackendHealth() {
             ? tr("HTTP %1").arg(httpStatus)
             : (reply->property("dshTimedOut").toBool()
                    ? tr("连接超时") : reply->errorString());
+        const bool stableObservation =
+            dsh::backend::backendHealthObservationStable(
+                running, consecutiveHealthFailures_, kHealthFailureThreshold);
+        if (!stableObservation) {
+            logger_.log(QStringLiteral("health: 短暂不可达，等待连续确认（%1/%2）：%3")
+                            .arg(consecutiveHealthFailures_)
+                            .arg(kHealthFailureThreshold)
+                            .arg(detail));
+            healthReply_.clear();
+            reply->deleteLater();
+            return;
+        }
         if (backendHealthKnown_ && running != lastBackendRunning_) {
             if (running) {
                 dsh::util::notify(tr("DSH Web 已恢复"),

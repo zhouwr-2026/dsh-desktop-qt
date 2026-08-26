@@ -77,6 +77,9 @@ cd dsh-desktop-0.1.0 && makepkg -si
 # 安装后第一次自检
 dsh-desktop --probe
 
+# 更新 DSH 或 profile 插件后的完整只读自检
+dsh-profile-check
+
 # 调试模式：把日志写到文件
 dsh-desktop --log-file ~/.local/share/dsh-desktop/dsh-desktop.log
 
@@ -176,6 +179,16 @@ DSH_DESKTOP_DEBUG=1 dsh-desktop   # 暂未启用，预留位
 QT_QPA_PLATFORM=offscreen ./dsh-desktop --self-test  # 离屏自检
 ```
 
+更新 `@deepseek-ai/dsh` 或第三方 profile 插件后，建议立即运行
+`dsh-profile-check`（源码目录内可运行 `scripts/check-dsh-profile.sh`）。它会检查
+profile 依赖声明的服务端/客户端入口、
+JavaScript 语法、Web 首页和核心会话 bundle，且不会修改配置、插件或服务。
+检查器优先从已发现的 `dsh-web.service` 读取实际 `DSH_HOME`、host 与 port；
+也可通过 `DSH_HOME`、`DSH_WEB_URL` 显式覆盖。
+若报告构建产物缺失，先运行 `dsh plugin --profile web install`；只有命令明确被
+pnpm 的新包发布年龄策略拦截、且已确认包来源可信时，才临时追加
+`--config.minimumReleaseAge=0`，不要永久关闭该保护。
+
 ## 与参考实现的差异（取长补短）
 
 * 不用 Electron — 体积更小、与 Plasma 6 的 StatusNotifier 协议原生对齐；
@@ -222,6 +235,7 @@ DSH-Desktop/
 ├── tests/                       # Qt Test
 ├── packaging/                   # PKGBUILD + .desktop + install.sh
 ├── scripts/                    # 开发与端到端验证脚本
+│   ├── check-dsh-profile.sh     # DSH profile 只读完整性检查
 │   └── smoke.sh                 # 端到端冒烟
 ├── docs/                       # 设计方案与开发文档
 │   └── DSH-DESKTOP-SERVICE-PLAN.zh.md

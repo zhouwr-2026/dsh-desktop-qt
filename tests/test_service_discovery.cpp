@@ -79,6 +79,7 @@ void TestServiceDiscovery::activeOfficialSystemService() {
         "LoadState=loaded\n"
         "ActiveState=active\n"
         "SubState=running\n"
+        "InvocationID=9e946ead817e438fb204f2db8cd93d73\n"
         "MainPID=136207\n"
         "ExecStart={ path=/usr/bin/dsh ; argv[]=/usr/bin/dsh web ; ignore_errors=no ; start_time=[n/a] ; stop_time=[n/a] ; pid=0 ; code=(null) ; status=0/0 }\n"
         "Environment=HOME=/home/zhouwr\n"
@@ -96,6 +97,7 @@ void TestServiceDiscovery::activeOfficialSystemService() {
     QCOMPARE(info.loadState, QStringLiteral("loaded"));
     QCOMPARE(info.activeState, QStringLiteral("active"));
     QCOMPARE(info.subState, QStringLiteral("running"));
+    QCOMPARE(info.invocationId, QStringLiteral("9e946ead817e438fb204f2db8cd93d73"));
     QCOMPARE(info.mainPid, static_cast<qint64>(136207));
     QCOMPARE(info.user, QStringLiteral("zhouwr"));
     QCOMPARE(info.workingDirectory, QStringLiteral("/home/zhouwr"));

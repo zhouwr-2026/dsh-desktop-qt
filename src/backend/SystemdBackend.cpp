@@ -168,6 +168,10 @@ Status SystemdBackend::status() {
         // 失败/不可达时才拉取 journal 摘要，避免健康态多的一次进程调用。
         if (!s.running || s.state == dsh::service::LifecycleState::Failed) {
             s.journalSummary = journalSummary(selected->info);
+            const QString repairHint = profileRepairHint(s.journalSummary);
+            if (!repairHint.isEmpty()) {
+                s.detail += QStringLiteral("\n") + repairHint;
+            }
         }
     } else {
         // 快照不可用（systemctl 缺失/发现失败）：保留构造时 scope，给出保守默认。
@@ -195,11 +199,13 @@ dsh::service::ServiceOrigin SystemdBackend::resolveOrigin(
 QString SystemdBackend::journalSummary(const dsh::service::ServiceInfo& info) const {
     const QString exe = QStandardPaths::findExecutable(QStringLiteral("journalctl"));
     if (exe.isEmpty()) return {};
+    const QString invocationMatch = systemdInvocationJournalMatch(info.invocationId);
+    if (invocationMatch.isEmpty()) return {};
     QProcess p;
     QStringList args;
     if (info.scope == dsh::service::ServiceScope::User) args << QStringLiteral("--user");
-    args << QStringLiteral("--no-pager") << QStringLiteral("-n") << QStringLiteral("5")
-         << QStringLiteral("-u") << info.unitName;
+    args << QStringLiteral("--no-pager") << QStringLiteral("-n") << QStringLiteral("100")
+         << invocationMatch;
     p.start(exe, args);
     if (!p.waitForFinished(2000)) {
         p.kill();

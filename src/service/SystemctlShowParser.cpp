@@ -114,6 +114,8 @@ ServiceInfo parseSystemctlShow(const QString& text,
             info.subState = value;
         } else if (key == QLatin1String("ExecStart")) {
             info.execStart = value;
+        } else if (key == QLatin1String("InvocationID")) {
+            info.invocationId = value;
         } else if (key == QLatin1String("User")) {
             info.user = value;
         } else if (key == QLatin1String("WorkingDirectory")) {

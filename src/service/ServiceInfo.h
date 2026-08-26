@@ -59,6 +59,7 @@ struct ServiceInfo {
     QString activeState;
     QString subState;
     QString execStart;
+    QString invocationId;
     QString user;
     QString workingDirectory;
     QStringList environment;       // 每条为未加引号的 KEY=VALUE

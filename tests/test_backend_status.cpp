@@ -15,7 +15,10 @@
 using dsh::backend::Mode;
 using dsh::backend::Status;
 using dsh::backend::applyServiceMetadata;
+using dsh::backend::backendHealthObservationStable;
 using dsh::backend::requiresStartConfirmation;
+using dsh::backend::profileRepairHint;
+using dsh::backend::systemdInvocationJournalMatch;
 using dsh::service::LifecycleState;
 using dsh::service::ServiceInfo;
 using dsh::service::ServiceOrigin;
@@ -62,6 +65,11 @@ private slots:
     void applyDoesNotTouchLifecycleFields();
     void requiresStartConfirmationSystemdStoppedOrFailed();
     void requiresStartConfirmationOtherModesOrStates();
+    void profileRepairHintRecognizesMissingModule();
+    void profileRepairHintRecognizesFatalMcpStartup();
+    void profileRepairHintIgnoresUnrelatedFailure();
+    void backendHealthObservationDebouncesFailures();
+    void systemdInvocationJournalMatchRejectsStaleOrInvalidIds();
 };
 
 void TestBackendStatus::statusDefaults() {
@@ -244,6 +252,46 @@ void TestBackendStatus::requiresStartConfirmationOtherModesOrStates() {
     QVERIFY(!requiresStartConfirmation(s));
     s.state = LifecycleState::Failed;
     QVERIFY(!requiresStartConfirmation(s));
+}
+
+void TestBackendStatus::profileRepairHintRecognizesMissingModule() {
+    const QString hint = profileRepairHint(QStringLiteral(
+        "Error [ERR_MODULE_NOT_FOUND]: Cannot find module '/profile/plugin/lib/index.js'"));
+    QVERIFY(hint.contains(QStringLiteral("dsh-profile-check")));
+    QVERIFY(hint.contains(QStringLiteral("dsh plugin --profile web install")));
+    QVERIFY(hint.contains(QStringLiteral("反复重启不能修复")));
+}
+
+void TestBackendStatus::profileRepairHintRecognizesFatalMcpStartup() {
+    const QString hint = profileRepairHint(QStringLiteral(
+        "mcp-client(wikijs): initial connection or tool synchronization failed"));
+    QVERIFY(hint.contains(QStringLiteral("failOnStartupError: false")));
+    QVERIFY(hint.contains(QStringLiteral("启用重连")));
+}
+
+void TestBackendStatus::profileRepairHintIgnoresUnrelatedFailure() {
+    QVERIFY(profileRepairHint(QStringLiteral("address already in use")).isEmpty());
+}
+
+void TestBackendStatus::backendHealthObservationDebouncesFailures() {
+    int failures = 0;
+    QVERIFY(!backendHealthObservationStable(false, failures, 3));
+    QCOMPARE(failures, 1);
+    QVERIFY(!backendHealthObservationStable(false, failures, 3));
+    QCOMPARE(failures, 2);
+    QVERIFY(backendHealthObservationStable(false, failures, 3));
+    QCOMPARE(failures, 3);
+
+    QVERIFY(backendHealthObservationStable(true, failures, 3));
+    QCOMPARE(failures, 0);
+}
+
+void TestBackendStatus::systemdInvocationJournalMatchRejectsStaleOrInvalidIds() {
+    QCOMPARE(systemdInvocationJournalMatch(
+                 QStringLiteral("9E946EAD817E438FB204F2DB8CD93D73")),
+             QStringLiteral("_SYSTEMD_INVOCATION_ID=9e946ead817e438fb204f2db8cd93d73"));
+    QVERIFY(systemdInvocationJournalMatch(QString()).isEmpty());
+    QVERIFY(systemdInvocationJournalMatch(QStringLiteral("not-an-invocation-id")).isEmpty());
 }
 
 QTEST_GUILESS_MAIN(TestBackendStatus)

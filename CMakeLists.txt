@@ -251,6 +251,10 @@ install(TARGETS dsh-desktop-updater
 install(TARGETS dsh-desktop-uninstaller
     RUNTIME DESTINATION "${CMAKE_INSTALL_BINDIR}"
 )
+install(PROGRAMS scripts/check-dsh-profile.sh
+    DESTINATION "${CMAKE_INSTALL_BINDIR}"
+    RENAME dsh-profile-check
+)
 install(FILES packaging/dsh-desktop.desktop
     DESTINATION "${CMAKE_INSTALL_DATAROOTDIR}/applications"
 )

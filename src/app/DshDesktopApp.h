@@ -134,6 +134,10 @@ private:
     bool updateCheckInProgress_{false};
     bool backendHealthKnown_{false};
     bool lastBackendRunning_{false};
+    /// 连续健康检查失败次数；达到阈值后才发布停服状态，避免一次 TCP
+    /// 抖动就误报“后端停止”。桌面端不在健康轮询中静默重启服务。
+    int consecutiveHealthFailures_{0};
+    static constexpr int kHealthFailureThreshold = 3;
     QString appliedLogoTheme_{QStringLiteral("light")};
 };
 

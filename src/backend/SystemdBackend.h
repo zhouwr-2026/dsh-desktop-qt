@@ -51,7 +51,7 @@ private:
     dsh::service::ServiceOrigin resolveOrigin(
         const dsh::service::ServiceInfo& info) const;
 
-    /// 读取只读 journal 最近几行摘要；不可用时返回空串。
+    /// 读取当前 systemd invocation 的最近一百行摘要；不可用时返回空串。
     QString journalSummary(const dsh::service::ServiceInfo& info) const;
 
     QString unitName_;

@@ -70,6 +70,18 @@ void applyServiceMetadata(Status& status,
                           const dsh::service::ServiceInfo& info,
                           const QString& currentUser = QString());
 
+/// 从 journal 摘要识别常见的 profile 构建产物缺失，并返回可执行的修复提示。
+QString profileRepairHint(const QString& journalSummary);
+
+/// 将单次健康探测折叠为稳定状态：成功立即生效并清零失败计数；失败只有连续
+/// 达到 ``failureThreshold`` 次才生效，避免短暂 TCP 抖动触发停服通知。
+bool backendHealthObservationStable(bool running,
+                                    int& consecutiveFailures,
+                                    int failureThreshold);
+
+/// 将 systemd InvocationID 转成 journalctl 精确字段匹配；非法或空 ID 返回空串。
+QString systemdInvocationJournalMatch(const QString& invocationId);
+
 /// 启动路径的决策判定：systemd 模式下当官方后端处于 ``Inactive``/``Failed``
 /// 时，桌面端不应静默自动拉起，而应先询问用户是否启动（尊重用户有意停用或
 /// 正在修复失败服务的意图）。
