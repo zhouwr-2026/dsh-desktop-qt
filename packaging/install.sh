@@ -101,16 +101,31 @@ install_icons() {
   log "注册黑白鲸鱼 SVG 图标（含 KDE symbolic 自配色）"
   # 仅装 hicolor 4 个文件（普通色版 + symbolic + 两份归档）；breeze / breeze-dark
   # 不装——KDE 主题继承链 Inherits=hicolor 自动传播 fallback，避免每个主题每个
-  # size 都铺一份（之前 27 个文件是过度设计）。Kickoff 命中 hicolor 普通色版，
-  # Tasks plasmoid 命中 hicolor symbolic 自动按 colorscheme 配色。
+  # size 都铺一份（之前 27 个文件是过度设计）。KDE 找图标时普通色版优先于
+  # -symbolic 后缀 fallback（KIconTheme::iconPath 在 hicolor/scalable/ 里命中
+  # dsh-whale.svg 就停，不会走到 dsh-whale-symbolic.svg）——所以普通色版的颜色
+  # 必须与当前 KDE colorscheme 一致，否则暗色 look-and-feel 下鲸鱼是黑色。
   local icon_dir="/usr/share/icons/hicolor/scalable/apps"
   mkdir -p "$icon_dir"
-  install -Dm644 "$ROOT/assets/dsh-whale-black.svg" "$icon_dir/dsh-whale.svg"
+
+  # CMake install 阶段装的是黑色版（fallback：多数发行版默认亮色），源码安装时
+  # 按当前 KDE colorscheme 智能覆盖——暗色 → 白色版、亮色 → 黑色版。
+  local brightness plain_svg
+  brightness="$(detect_kde_brightness)"
+  case "$brightness" in
+    dark)  plain_svg="$ROOT/assets/dsh-whale-white.svg" ;;
+    *)     plain_svg="$ROOT/assets/dsh-whale-black.svg" ;;
+  esac
+  log "KDE 配色探测：brightness=$brightness → 普通色版使用 $(basename "$plain_svg")"
+  install -Dm644 "$plain_svg" "$icon_dir/dsh-whale.svg"
   install -Dm644 "$ROOT/assets/dsh-whale-black.svg" "$icon_dir/dsh-whale-black.svg"
   install -Dm644 "$ROOT/assets/dsh-whale-white.svg" "$icon_dir/dsh-whale-white.svg"
 
   # 派生 KDE symbolic SVG（fill=#000000 → currentColor），源资产保持 black +
-  # white 两份不重复；symbolic 是 build / install 阶段派生品。
+  # white 两份不重复；symbolic 是 build / install 阶段派生品。正常情况下不
+  # 走 symbolic 路径（普通色版优先），仅作兜底——如果未来 KDE 改 fallback 顺序
+  # 或 enableQmlIconLoaderColorize 等机制启用，symbolic 是 colorscheme 自配色的
+  # 唯一保险。
   local symbolic_svg
   symbolic_svg="$(mktemp --suffix=.svg)"
   sed 's/fill="#000000"/fill="currentColor"/g' \
@@ -121,6 +136,29 @@ install_icons() {
   if command -v gtk-update-icon-cache >/dev/null 2>&1; then
     gtk-update-icon-cache -f /usr/share/icons/hicolor 2>/dev/null || true
   fi
+}
+
+# detect_kde_brightness：从 kdeglobals 读 LookAndFeelPackage + ColorScheme，
+# 启发式判断当前 Plasma 配色是暗色还是亮色。无 kdeglobals 或字段缺失时
+# 返回 light（保守——多数发行版默认亮色背景 + 黑色图标可见）。
+#
+# install.sh 通常由 sudo 跑（要写到 /usr），$HOME=/root，/root/.config/kdeglobals
+# 不存在——必须通过 SUDO_USER 拿真实用户 home dir；非 sudo 场景 fallback 到
+# $HOME（用户直接跑 install.sh 调试）。
+detect_kde_brightness() {
+  local real_user_home
+  if [[ -n "${SUDO_USER:-}" ]]; then
+    real_user_home="$(getent passwd "$SUDO_USER" 2>/dev/null | cut -d: -f6 || true)"
+  fi
+  local conf="${real_user_home:-$HOME}/.config/kdeglobals"
+  [[ -r "$conf" ]] || { echo "light"; return; }
+  local laf cs
+  laf="$(grep -E '^LookAndFeelPackage=' "$conf" 2>/dev/null | head -1 | cut -d= -f2- || true)"
+  cs="$(grep -E '^ColorScheme=' "$conf" 2>/dev/null | head -1 | cut -d= -f2- || true)"
+  case "${laf:-}${cs:-}" in
+    *-dark*|*Dark*|*[Dd]ark*) echo "dark" ;;
+    *)                        echo "light" ;;
+  esac
 }
 
 install_license() {
