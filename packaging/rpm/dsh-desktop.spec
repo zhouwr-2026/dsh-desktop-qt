@@ -55,6 +55,7 @@ cp packaging/dsh-desktop.desktop %{buildroot}%{_sysconfdir}/xdg/autostart/
 %{_bindir}/dsh-profile-check
 %{_datadir}/applications/dsh-desktop.desktop
 %{_datadir}/icons/hicolor/scalable/apps/dsh-whale.svg
+%{_datadir}/icons/hicolor/scalable/apps/dsh-whale-symbolic.svg
 %{_datadir}/icons/hicolor/scalable/apps/dsh-whale-black.svg
 %{_datadir}/icons/hicolor/scalable/apps/dsh-whale-white.svg
 %{_libdir}/dsh-desktop/dsh-theme-export
