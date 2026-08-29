@@ -30,8 +30,8 @@ optdepends=(
 )
 # source/sha256sums 由发布者打 v0.1.0 tag 时填充；本地构建请把 source 改
 # 为 git+file://... 或跳过 makepkg 直接用 packaging/install.sh。
-source=("$pkgname-$pkgver.tar.gz")
-sha256sums=('SKIP')
+source=("https://github.com/zhouwr-2026/dsh-desktop-qt/releases/download/v0.1.0/dsh-desktop-0.1.0-source.tar.gz")
+sha256sums=('ef85d7ed0c45fc07cec7a0d8ac1506f6e16b50868fbfde12be0fb746614aa4b1')
 
 build() {
     cd "$pkgname-$pkgver"
