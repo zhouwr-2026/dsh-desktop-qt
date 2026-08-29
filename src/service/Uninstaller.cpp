@@ -163,7 +163,12 @@ UninstallLayout Uninstaller::layoutForPrefix(const QString& prefix) {
         QStringLiteral("/usr/local/share/applications/dsh-desktop.desktop"));
 
     // 图标：全新安装只产生 SVG，但卸载时需同时清理旧版本遗留的 PNG 位图。
+    // 同时清掉普通色版 + KDE symbolic SVG，跨 Kickoff / Tasks plasmoid 两套查找路径。
+    // breeze / breeze-dark 主题里没装新文件（KDE 主题继承链 Inherits=hicolor
+    // 自动传播），但旧版本（PR #2 之前）装过——保留 foreach 兼容旧清理。
     layout.iconFiles = {
+        data + QStringLiteral("/icons/hicolor/scalable/apps/dsh-whale.svg"),
+        data + QStringLiteral("/icons/hicolor/scalable/apps/dsh-whale-symbolic.svg"),
         data + QStringLiteral("/icons/hicolor/scalable/apps/dsh-whale-black.svg"),
         data + QStringLiteral("/icons/hicolor/scalable/apps/dsh-whale-white.svg"),
     };
@@ -171,7 +176,11 @@ UninstallLayout Uninstaller::layoutForPrefix(const QString& prefix) {
         layout.iconFiles.append(
             data + QStringLiteral("/icons/breeze/apps/%1/dsh-whale.svg").arg(size));
         layout.iconFiles.append(
+            data + QStringLiteral("/icons/breeze/apps/%1/dsh-whale-symbolic.svg").arg(size));
+        layout.iconFiles.append(
             data + QStringLiteral("/icons/breeze-dark/apps/%1/dsh-whale.svg").arg(size));
+        layout.iconFiles.append(
+            data + QStringLiteral("/icons/breeze-dark/apps/%1/dsh-whale-symbolic.svg").arg(size));
     }
     for (int size : {22, 32, 48, 64, 128, 256}) {
         layout.iconFiles.append(
