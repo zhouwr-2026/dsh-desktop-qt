@@ -98,23 +98,25 @@ install_artifacts() {
 }
 
 install_icons() {
-  log "注册黑白鲸鱼 SVG 图标"
-  # 仅安装 SVG；canonical 单一来源位于 assets/（与 CMake 安装与 QRC 一致）。
-  # 不再用 rsvg-convert 生成可选 PNG 位图变体。
+  log "注册黑白鲸鱼 SVG 图标（含 KDE symbolic 自配色）"
+  # 仅装 hicolor 4 个文件（普通色版 + symbolic + 两份归档）；breeze / breeze-dark
+  # 不装——KDE 主题继承链 Inherits=hicolor 自动传播 fallback，避免每个主题每个
+  # size 都铺一份（之前 27 个文件是过度设计）。Kickoff 命中 hicolor 普通色版，
+  # Tasks plasmoid 命中 hicolor symbolic 自动按 colorscheme 配色。
   local icon_dir="/usr/share/icons/hicolor/scalable/apps"
   mkdir -p "$icon_dir"
   install -Dm644 "$ROOT/assets/dsh-whale-black.svg" "$icon_dir/dsh-whale.svg"
   install -Dm644 "$ROOT/assets/dsh-whale-black.svg" "$icon_dir/dsh-whale-black.svg"
   install -Dm644 "$ROOT/assets/dsh-whale-white.svg" "$icon_dir/dsh-whale-white.svg"
 
-  # KWin/Plasma 使用 .desktop 的 dsh-whale 名称：Breeze 下映射黑鲸鱼，
-  # Breeze Dark 下映射白鲸鱼。两套主题使用同一名称才能动态切换。
-  for size in 16 22 24 32 48 64; do
-    install -Dm644 "$ROOT/assets/dsh-whale-black.svg" \
-      "/usr/share/icons/breeze/apps/$size/dsh-whale.svg"
-    install -Dm644 "$ROOT/assets/dsh-whale-white.svg" \
-      "/usr/share/icons/breeze-dark/apps/$size/dsh-whale.svg"
-  done
+  # 派生 KDE symbolic SVG（fill=#000000 → currentColor），源资产保持 black +
+  # white 两份不重复；symbolic 是 build / install 阶段派生品。
+  local symbolic_svg
+  symbolic_svg="$(mktemp --suffix=.svg)"
+  sed 's/fill="#000000"/fill="currentColor"/g' \
+    "$ROOT/assets/dsh-whale-black.svg" > "$symbolic_svg"
+  install -Dm644 "$symbolic_svg" "$icon_dir/dsh-whale-symbolic.svg"
+  rm -f "$symbolic_svg"
 
   if command -v gtk-update-icon-cache >/dev/null 2>&1; then
     gtk-update-icon-cache -f /usr/share/icons/hicolor 2>/dev/null || true

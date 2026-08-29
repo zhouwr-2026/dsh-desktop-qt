@@ -241,11 +241,41 @@ install(FILES packaging/dsh-desktop.desktop
 # KWin/Plasma 对已关联 .desktop 的窗口优先使用桌面条目的 Icon，而不是
 # _NET_WM_ICON。同一个图标名在 Breeze 与 Breeze Dark 中分别安装黑/白
 # SVG，才能让标题栏和任务栏随 KDE 图标主题切换。
-# 非 Breeze 主题（GNOME/XFCE/hicolor）使用通用 dsh-whale 名称回退，
-# 同时保留显式黑/白文件供调试和第三方主题引用。
+#
+# KDE Kickoff（启动器）与 Tasks plasmoid（任务栏）查图标的路径不同，必须同时装
+# 普通色版（Kickoff 命中）+ symbolic SVG（Tasks plasmoid 自动按 colorscheme 配色）：
+#   * Kickoff 的 QIcon::fromTheme("dsh-whale") 严格匹配 dsh-whale.svg，不识别
+#     -symbolic 后缀；不命中 → 退化到 generic file icon。
+#   * Tasks plasmoid 内部 fallback 路径查 dsh-whale-symbolic.svg，由 KIconEffect
+#     用当前 colorscheme 前景色渲染 currentColor → 暗色配色下变白、亮色下变黑。
+#
+# 只装 hicolor 两个文件（普通色版 + symbolic）+ 两份命名归档，breeze / breeze-dark
+# 不装：KDE 主题继承链 Inherits=hicolor 自动传播 fallback，无需在每个主题目录
+# 都铺一份（之前每个 size 都装的方案 27 个文件是过度设计）。
+#
+# symbolic SVG 是 dsh-whale-black.svg 的派生品（fill=#000000 → currentColor），
+# 源资产保持 black + white 两份；CMake 配置阶段用 execute_process + sed 派生到
+# build dir，避免在 assets/ 引入第三份重复资产。不用 file(READ)+string(REPLACE)
+# 是因为后者会把 ${...} 当成 CMake 变量插值——当前 SVG 无 $ 安全，但未来 SVG
+# 加 & / \ 等字符可能踩坑；sed 是真正的字面替换，更稳。
+execute_process(
+    COMMAND sed "s/fill=\"#000000\"/fill=\"currentColor\"/g"
+    INPUT_FILE "${CMAKE_CURRENT_SOURCE_DIR}/assets/dsh-whale-black.svg"
+    OUTPUT_FILE "${CMAKE_CURRENT_BINARY_DIR}/dsh-whale-symbolic.svg"
+    RESULT_VARIABLE _dsh_sym_rv
+)
+if(NOT _dsh_sym_rv EQUAL 0)
+    message(FATAL_ERROR
+        "派生 dsh-whale-symbolic.svg 失败 (sed exit=${_dsh_sym_rv}); \
+请检查 assets/dsh-whale-black.svg 是否存在且 sed 可用")
+endif()
 install(FILES assets/dsh-whale-black.svg
     DESTINATION "${CMAKE_INSTALL_DATAROOTDIR}/icons/hicolor/scalable/apps"
     RENAME dsh-whale.svg
+)
+install(FILES "${CMAKE_CURRENT_BINARY_DIR}/dsh-whale-symbolic.svg"
+    DESTINATION "${CMAKE_INSTALL_DATAROOTDIR}/icons/hicolor/scalable/apps"
+    RENAME dsh-whale-symbolic.svg
 )
 install(FILES assets/dsh-whale-black.svg
     DESTINATION "${CMAKE_INSTALL_DATAROOTDIR}/icons/hicolor/scalable/apps"
@@ -255,16 +285,6 @@ install(FILES assets/dsh-whale-white.svg
     DESTINATION "${CMAKE_INSTALL_DATAROOTDIR}/icons/hicolor/scalable/apps"
     RENAME dsh-whale-white.svg
 )
-foreach(icon_size 16 22 24 32 48 64)
-    install(FILES assets/dsh-whale-black.svg
-        DESTINATION "${CMAKE_INSTALL_DATAROOTDIR}/icons/breeze/apps/${icon_size}"
-        RENAME dsh-whale.svg
-    )
-    install(FILES assets/dsh-whale-white.svg
-        DESTINATION "${CMAKE_INSTALL_DATAROOTDIR}/icons/breeze-dark/apps/${icon_size}"
-        RENAME dsh-whale.svg
-    )
-endforeach()
 # systemd unit 与 autostart 需写到绝对系统路径（/usr/lib/systemd/system 与
 # /etc/xdg/autostart）。CMake install 在当前用户运行时会因权限失败，因此
 # 这两类文件由 packaging/install.sh（源码安装）与 packaging/post-install.sh
