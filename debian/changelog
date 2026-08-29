@@ -1,3 +1,18 @@
+dsh-desktop (0.1.1-1) stable; urgency=medium
+
+  * bugfix: dsh-theme-export.service 启动前 mkdir /run/dsh-desktop（修
+    NAMESPACE 226）。
+  * bugfix: post-install.sh sysconfdir=/etc 写死（XDG autostart 规范）。
+  * bugfix: hicolor 普通色版按当前 KDE colorscheme 选色（Kickoff 命中非
+    硬编码黑色）。
+  * bugfix: install.sh detect_kde_brightness 走 SUDO_USER（sudo 上下文）。
+  * 增强: PKGBUILD/debian/rpm post-install hook 也跑 colorscheme 探测，
+    让发行版包用户也获得 colorscheme 智能选色。
+  * 增强: 共享 packaging/icon-brightness.sh 装到
+    /usr/lib/dsh-desktop/icon-brightness.sh。
+
+ -- DSH Desktop 维护团队  Sat, 29 Aug 2026 17:00:00 +0800
+
 dsh-desktop (0.1.0-1) stable; urgency=medium
 
   * 首次正式发布。

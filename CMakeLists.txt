@@ -17,7 +17,7 @@
 
 cmake_minimum_required(VERSION 3.19)
 project(dsh-desktop
-    VERSION 0.1.0
+    VERSION 0.1.1
     DESCRIPTION "DSH Desktop — KDE Plasma 6 上的 DSH Web 原生包装器"
     LANGUAGES CXX
 )

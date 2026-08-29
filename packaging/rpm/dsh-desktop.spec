@@ -1,5 +1,5 @@
 Name:           dsh-desktop
-Version:        0.1.0
+Version:        0.1.1
 Release:        1%{?dist}
 Summary:        DeepSeek Harness 原生 Linux 桌面包装器
 License:        MIT
@@ -97,5 +97,12 @@ fi
 %systemd_postun_with_restart dsh-theme-export.path
 
 %changelog
+* Sat Aug 29 2026 DSH Desktop 维护团队 - 0.1.1-1
+- bugfix: dsh-theme-export.service 启动前 mkdir /run/dsh-desktop（修 NAMESPACE 226）
+- bugfix: post-install.sh sysconfdir=/etc 写死（XDG autostart 规范）
+- bugfix: hicolor 普通色版按当前 KDE colorscheme 选色（Kickoff 命中非硬编码黑）
+- bugfix: install.sh detect_kde_brightness 走 SUDO_USER（sudo 上下文）
+- 增强: PKGBUILD/debian/rpm post-install hook 也跑 colorscheme 探测
+- 增强: 共享 packaging/icon-brightness.sh + /usr/lib/dsh-desktop/icon-brightness.sh
 * Thu Aug 28 2026 DSH Desktop 维护团队 - 0.1.0-1
 - 首次正式发布

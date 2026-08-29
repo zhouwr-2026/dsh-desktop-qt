@@ -2,6 +2,55 @@
 
 DSH Desktop 所有重要变更都记录在此。版本遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
+## [0.1.1] - 2026-08-29
+
+### 修复
+- **`dsh-theme-export.service` 启动报 NAMESPACE 226**：service 单元
+  `ReadWritePaths=/run/dsh-desktop` 但 `/run` 是 tmpfs，`/run/dsh-desktop`
+  每次重启消失；`install.sh::configure_theme_export()` 在 `systemctl
+  start` 之前 `install -d /run/dsh-desktop`。关联 PR #1。
+- **autostart .desktop 装到 `/usr/etc/xdg/autostart/`**：`post-install.sh`
+  第 30 行 `sysconfdir="$prefix/etc"` 在 prefix=/usr 时展开为 `/usr/etc/...`，
+  XDG autostart scanner 找不到；改写死 `/etc`，符合 XDG 规范。关联 PR #1。
+- **启动器 / 任务栏图标在暗色 Plasma 下是黑色（应为白色）**：KDE
+  `KIconTheme::iconPath` 在 `hicolor/scalable/apps/` 命中 `dsh-whale.svg`
+  就停（普通色版优先于 `-symbolic` 后缀 fallback），CMake install 装的
+  固定黑色版与暗色 look-and-feel 不协调。`install.sh::install_icons()`
+  检测当前 KDE colorscheme（读 `kdeglobals` 的 `LookAndFeelPackage` +
+  `ColorScheme`），按本机情况装白色版或黑色版。关联 PR #3 + PR #4。
+- **`detect_kde_brightness` 在 sudo 上下文 fallback light**：install.sh
+  通常由 `sudo bash` 跑，`$HOME=/root`、`/root/.config/kdeglobals` 不存在，
+  导致所有 sudo 装包的用户都装黑色 fallback；走 `SUDO_USER` 拿真实用户
+  home dir。关联 PR #4。
+- **NSS `passwd: files systemd` 下 `getent passwd` 漏掉 UID≥1000 用户**：
+  部分发行版 NSS 配置下 `getent passwd` 全部列表不显示普通用户——包安装
+  root 上下文遍历会漏掉所有真实桌面用户，colorscheme 探测 fallback
+  黑色。改用 `/home/*/` glob 代替（更可靠，root / service account home
+  不在 `/home/` 下自动排除）。关联 PR #5。
+- **dash/sh source bash 脚本会失败**：`icon-brightness.sh` 用 bash 语法
+  `[[ ]]` / `local` / `(( )`，但 `debian/dsh-desktop.postinst` 用
+  `#!/bin/sh`（dash）、`rpm spec %post` 跑在 sh 上下文——dash source
+  bash 脚本报 syntax error。改成可执行脚本 + 4 个调用方用 subshell 调用
+  `brightness="$("$lib")"`，subshell 隔离 bash 依赖。关联 PR #5。
+
+### 新增
+- **共享配色探测脚本 `packaging/icon-brightness.sh`**：所有发行版包
+  post-install hook（PKGBUILD `post_install` / Debian `postinst` / rpm
+  `%post`）+ `packaging/install.sh` 通过 subshell 调用这一个脚本——
+  避免逻辑四处重复并漂移。CMake install 把它装到
+  `/usr/lib/dsh-desktop/icon-brightness.sh`。
+- **CMake `execute_process + sed` 派生 `dsh-whale-symbolic.svg`**：配置
+  阶段用 `execute_process(COMMAND sed "s/fill=\"#000000\"/fill=\"currentColor\"/g"
+  INPUT_FILE ... OUTPUT_FILE ... RESULT_VARIABLE ...)` 派生 fill 替换版本；
+  `RESULT_VARIABLE` + `message(FATAL_ERROR)` 显式报错。不用 `file(READ) +
+  string(REPLACE)` 是因为后者内部会把 `${...}` 当成 CMake 变量插值——
+  当前 SVG 无 `$` 安全，但未来 SVG 加 `&` `\` 等字符可能踩坑；sed 是真正的
+  字面替换。
+
+### 影响
+- 5 种安装方式（源码 / Arch / Debian / RPM / 通用 .tar.gz）全部获得
+  colorscheme 智能选色，包安装用户不再被 CMake fallback 黑色坑到。
+
 ## [Unreleased]
 
 ### 新增
