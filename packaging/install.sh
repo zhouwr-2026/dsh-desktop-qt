@@ -110,8 +110,16 @@ install_icons() {
 
   # CMake install 阶段装的是黑色版（fallback：多数发行版默认亮色），源码安装时
   # 按当前 KDE colorscheme 智能覆盖——暗色 → 白色版、亮色 → 黑色版。
+  # packaging/icon-brightness.sh 是可执行脚本（不是 source-able 函数），调用方
+  # 通过 subshell 拿 dark/light 字符串，避免 dash/sh 环境 source bash 脚本失败。
+  # 与所有发行版包 post-install hook（PKGBUILD post_install / debian postinst /
+  # rpm %post）共用，避免逻辑四处漂移。
+  local brightness_lib="/usr/lib/dsh-desktop/icon-brightness.sh"
+  if [[ ! -x "$brightness_lib" ]]; then
+    die "找不到可执行的 $brightness_lib；install_artifacts()（cmake install）可能未跑成功"
+  fi
   local brightness plain_svg
-  brightness="$(detect_kde_brightness)"
+  brightness="$("$brightness_lib")"
   case "$brightness" in
     dark)  plain_svg="$ROOT/assets/dsh-whale-white.svg" ;;
     *)     plain_svg="$ROOT/assets/dsh-whale-black.svg" ;;
@@ -136,29 +144,6 @@ install_icons() {
   if command -v gtk-update-icon-cache >/dev/null 2>&1; then
     gtk-update-icon-cache -f /usr/share/icons/hicolor 2>/dev/null || true
   fi
-}
-
-# detect_kde_brightness：从 kdeglobals 读 LookAndFeelPackage + ColorScheme，
-# 启发式判断当前 Plasma 配色是暗色还是亮色。无 kdeglobals 或字段缺失时
-# 返回 light（保守——多数发行版默认亮色背景 + 黑色图标可见）。
-#
-# install.sh 通常由 sudo 跑（要写到 /usr），$HOME=/root，/root/.config/kdeglobals
-# 不存在——必须通过 SUDO_USER 拿真实用户 home dir；非 sudo 场景 fallback 到
-# $HOME（用户直接跑 install.sh 调试）。
-detect_kde_brightness() {
-  local real_user_home
-  if [[ -n "${SUDO_USER:-}" ]]; then
-    real_user_home="$(getent passwd "$SUDO_USER" 2>/dev/null | cut -d: -f6 || true)"
-  fi
-  local conf="${real_user_home:-$HOME}/.config/kdeglobals"
-  [[ -r "$conf" ]] || { echo "light"; return; }
-  local laf cs
-  laf="$(grep -E '^LookAndFeelPackage=' "$conf" 2>/dev/null | head -1 | cut -d= -f2- || true)"
-  cs="$(grep -E '^ColorScheme=' "$conf" 2>/dev/null | head -1 | cut -d= -f2- || true)"
-  case "${laf:-}${cs:-}" in
-    *-dark*|*Dark*|*[Dd]ark*) echo "dark" ;;
-    *)                        echo "light" ;;
-  esac
 }
 
 install_license() {
