@@ -205,6 +205,10 @@ configure_dsh_service() {
 
 configure_theme_export() {
   log "配置跨用户 KDE 主题同步"
+  # dsh-theme-export.service 的 sandbox 用 ReadWritePaths=/run/dsh-desktop；
+  # /run 是 tmpfs，每次重启或首次安装目录不存在会让 start 报 NAMESPACE 226。
+  # 用 install -d 与脚本其它目录创建风格一致，并显式 0755。
+  install -d -m 0755 /run/dsh-desktop
   systemctl daemon-reload
   systemctl enable --now dsh-theme-export.path
   systemctl start dsh-theme-export.service

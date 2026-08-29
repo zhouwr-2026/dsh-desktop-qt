@@ -27,7 +27,10 @@ done
 
 src_root="$(cd "$(dirname "$0")/.." && pwd)"
 libdir="$prefix/lib"
-sysconfdir="$prefix/etc"
+# autostart .desktop 始终落在 /etc（XDG autostart 规范要求系统级目录是 /etc/xdg/autostart），
+# 不跟 prefix 走——否则 prefix=/usr 时落到 /usr/etc/xdg/autostart（CMake 默认展开），
+# XDG autostart scanner 找不到，登录自启动失效。
+sysconfdir="/etc"
 
 if [[ ! -r "$src_root/packaging/dsh-theme-export.service" ]]; then
     echo "错误：找不到 packaging/dsh-theme-export.service" >&2
