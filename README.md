@@ -4,6 +4,7 @@ DSH Desktop 是使用 C++17 与 Qt 6 开发的 DeepSeek Harness 原生桌面包�
 
 > **Reference**: This project is based on the desktop wrapper concept from [anywhere-labs/deepseek-harness-desktop](https://github.com/anywhere-labs/deepseek-harness-desktop), reimplemented in native C++/Qt6 for Linux KDE Plasma 6 with zero Electron dependency.
 
+## Features
 
 - 常驻系统托盘与原生 Qt 菜单。
 - 持久化 WebEngine 登录会话、缓存与 Cookie。
@@ -13,7 +14,6 @@ DSH Desktop 是使用 C++17 与 Qt 6 开发的 DeepSeek Harness 原生桌面包�
 - 统一检查 `dsh` 后端与桌面端更新。
 - 只读发现并校验现有 `dsh-web.service`；没有有效服务时使用 supervised `dsh web` 子进程。
 - 后端健康检查、自动恢复提示和安全的安装/卸载助手。
-
 
 ## Credits & Acknowledgments
 
@@ -40,6 +40,8 @@ The following third-party components are used:
 - libxcb: MIT
 
 See [docs/DEPENDENCIES.md](docs/DEPENDENCIES.md) for complete dependency tree.
+
+---
 
 ## 系统要求
 
@@ -144,32 +146,6 @@ DEB/RPM/Arch 包请使用对应包管理器卸载。用户配置、WebEngine 数
 - [支持与反馈](SUPPORT.md)
 - [发布流程（维护者）](docs/RELEASING.md)
 - [CI 工作流](.github/workflows/release.yml)
-
-
-## Credits & Acknowledgments
-
-### Upstream Projects
-- **[deepseek-ai/deepseek-harness](https://github.com/deepseek-ai/deepseek-harness)** — The official DeepSeek Harness backend and CLI tool that provides the web service we wrap. Licensed under Apache-2.0.
-- **[anywhere-labs/deepseek-harness-desktop](https://github.com/anywhere-labs/deepseek-harness-desktop)** — The reference Electron-based desktop wrapper for Windows/macOS. Our project reimplements the desktop experience natively for Linux using Qt 6.
-
-### Dependencies
-- **[Qt 6](https://www.qt.io/)** — Cross-platform application framework. Licensed under GPL-3.0 / Commercial.
-- **[systemd](https://systemd.io/)** — System and service manager. Licensed under LGPL-2.1+.
-- **[polkit](https://www.freedesktop.org/wiki/Software/polkit/)** — Policy framework for managing system-wide privileges. Licensed under LGPL-2.1+.
-- **[libxcb](https://xcb.freedesktop.org/)** — C binding to the X11 protocol. Licensed under MIT.
-
-### Open Source Licenses
-This project is licensed under MIT License. See [LICENSE](LICENSE) for details.
-
-The following third-party components are used:
-- Qt 6 components: LGPL-3.0 or Commercial
-- systemd: LGPL-2.1+
-- polkit: LGPL-2.1+
-- libxcb: MIT
-
-See [docs/DEPENDENCIES.md](docs/DEPENDENCIES.md) for complete dependency tree.
-
----
 
 ## 许可证
 
