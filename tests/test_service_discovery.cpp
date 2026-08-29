@@ -10,6 +10,7 @@
 
 #include "../src/service/SystemctlShowParser.h"
 #include "../src/service/ServiceDiscovery.h"
+#include "../src/service/ShowFailure.h"
 
 using dsh::service::DetectedService;
 using dsh::service::DiscoveryResult;
@@ -19,6 +20,7 @@ using dsh::service::RejectionReason;
 using dsh::service::ServiceInfo;
 using dsh::service::ServiceOrigin;
 using dsh::service::ServiceScope;
+using dsh::service::classifyShowFailure;
 using dsh::service::invokesOfficialDshWeb;
 using dsh::service::kDefaultHost;
 using dsh::service::kDefaultPort;
@@ -70,6 +72,11 @@ private slots:
     void selectNoneWhenNoValid();
     void selectedAccessor();
     void detectedCarriesUserScopeWhenBothValid();
+    void classifyShowFailureMapsNotFound();
+    void classifyShowFailureMapsBusDown();
+    void classifyShowFailureMapsOtherToShowFailed();
+    void classifyShowFailureEmptyStderrFallsBack();
+    void classifyShowFailureCaseInsensitiveBus();
 };
 
 void TestServiceDiscovery::activeOfficialSystemService() {
@@ -343,6 +350,91 @@ void TestServiceDiscovery::detectedCarriesUserScopeWhenBothValid() {
     QCOMPARE(asInt(detected.scope), asInt(ServiceScope::User));
     QCOMPARE(detected.host, QStringLiteral("127.0.0.1"));
     QCOMPARE(detected.port, 9090);
+}
+
+// ---------------------------------------------------------------------------
+// classifyShowFailure 字符串匹配规则：
+//   * "could not be found" / "No such file or directory" → UnitNotFound
+//   * "bus" / "connect"（不区分大小写）→ BusUnavailable
+//   * 其它 → ShowFailed
+//   * stderr 为空时 detail 退化为中文提示，避免给调用方空字符串。
+// 任何字符串匹配规则被改动都会触发以下用例回归。
+// ---------------------------------------------------------------------------
+
+void TestServiceDiscovery::classifyShowFailureMapsNotFound() {
+    RejectionReason reason = RejectionReason::None;
+    QString detail;
+
+    classifyShowFailure(
+        QStringLiteral("Failed to get unit: Unit dsh-web.service could not be found."),
+        QStringLiteral("dsh-web.service"), reason, detail);
+    QCOMPARE(asInt(reason), asInt(RejectionReason::UnitNotFound));
+    QCOMPARE(detail, QStringLiteral("dsh-web.service 在该范围未发现"));
+
+    classifyShowFailure(
+        QStringLiteral("ls: cannot access '/etc/systemd/system/dsh-web.service': No such file or directory"),
+        QStringLiteral("dsh-web.service"), reason, detail);
+    QCOMPARE(asInt(reason), asInt(RejectionReason::UnitNotFound));
+}
+
+void TestServiceDiscovery::classifyShowFailureMapsBusDown() {
+    RejectionReason reason = RejectionReason::None;
+    QString detail;
+
+    // "bus" 命中（不区分大小写）
+    classifyShowFailure(
+        QStringLiteral("Failed to connect to bus: No medium found"),
+        QStringLiteral("dsh-web.service"), reason, detail);
+    QCOMPARE(asInt(reason), asInt(RejectionReason::BusUnavailable));
+    QVERIFY(detail.contains(QStringLiteral("bus")));
+
+    // "connect" 命中
+    classifyShowFailure(
+        QStringLiteral("Failed to connect to /run/systemd/private"),
+        QStringLiteral("dsh-web.service"), reason, detail);
+    QCOMPARE(asInt(reason), asInt(RejectionReason::BusUnavailable));
+}
+
+void TestServiceDiscovery::classifyShowFailureMapsOtherToShowFailed() {
+    RejectionReason reason = RejectionReason::None;
+    QString detail;
+
+    classifyShowFailure(
+        QStringLiteral("exit status 1: random failure"),
+        QStringLiteral("dsh-web.service"), reason, detail);
+    QCOMPARE(asInt(reason), asInt(RejectionReason::ShowFailed));
+    QCOMPARE(detail, QStringLiteral("exit status 1: random failure"));
+}
+
+void TestServiceDiscovery::classifyShowFailureEmptyStderrFallsBack() {
+    RejectionReason reason = RejectionReason::None;
+    QString detail;
+
+    // stderr 为空：detail 退化为中文提示（调用方可能用 detail 给用户看）
+    classifyShowFailure(QString(), QStringLiteral("dsh-web.service"), reason, detail);
+    QCOMPARE(asInt(reason), asInt(RejectionReason::ShowFailed));
+    QVERIFY(!detail.isEmpty());
+
+    // 仅有空白也视作空
+    classifyShowFailure(QStringLiteral("   \n\t  "),
+                        QStringLiteral("dsh-web.service"), reason, detail);
+    QCOMPARE(asInt(reason), asInt(RejectionReason::ShowFailed));
+    QVERIFY(!detail.isEmpty());
+}
+
+void TestServiceDiscovery::classifyShowFailureCaseInsensitiveBus() {
+    RejectionReason reason = RejectionReason::None;
+    QString detail;
+
+    classifyShowFailure(
+        QStringLiteral("Cannot autolaunch D-Bus without X11 $DISPLAY"),
+        QStringLiteral("dsh-web.service"), reason, detail);
+    QCOMPARE(asInt(reason), asInt(RejectionReason::BusUnavailable));
+
+    classifyShowFailure(
+        QStringLiteral("Cannot CONNECT to server"),
+        QStringLiteral("dsh-web.service"), reason, detail);
+    QCOMPARE(asInt(reason), asInt(RejectionReason::BusUnavailable));
 }
 
 QTEST_GUILESS_MAIN(TestServiceDiscovery)

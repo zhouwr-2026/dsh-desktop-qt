@@ -5,3 +5,18 @@ After=graphical.target
 [Service]
 Type=oneshot
 ExecStart=/usr/lib/dsh-desktop/dsh-theme-export
+# 沙箱硬化（systemd ≥ 244）：
+# * NoNewPrivileges：禁止 setuid/setgid 二进制提权
+# * ProtectSystem=strict：/usr、/boot、/etc 只读；只允许写 ReadWritePaths
+# * PrivateTmp：独立 /tmp 命名空间（脚本只用 mktemp 在 /run 下，无需共享）
+# * ProtectHome：把 /home、/root、/run/user 屏蔽为不可读；脚本要显式放行
+#   /root/.config（只读）+ /run/dsh-desktop（可写）
+# * ReadOnlyPaths/ReadWritePaths 显式放行所需路径，最小权限
+# 注意：脚本必须以 root 身份读 /root/.config/kdeglobals 并写
+# /run/dsh-desktop/theme，所以未设 User=/Group=（systemd 默认 root）。
+NoNewPrivileges=yes
+ProtectSystem=strict
+PrivateTmp=yes
+ProtectHome=yes
+ReadOnlyPaths=/root/.config
+ReadWritePaths=/run/dsh-desktop

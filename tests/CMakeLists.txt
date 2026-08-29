@@ -4,7 +4,7 @@
 #
 # 每个 test_*.cpp 编译成独立可执行，ctest 一次性跑完。
 
-find_package(Qt6 6.5 REQUIRED COMPONENTS Test)
+find_package(Qt6 6.6 REQUIRED COMPONENTS Test)
 
 # semver 测试：只需要 core，不依赖 Qt Widgets
 add_executable(dsh-semver-test test_semver.cpp)
@@ -107,6 +107,14 @@ add_test(NAME backend-status COMMAND dsh-backend-status-test)
 add_test(NAME profile-checker
     COMMAND bash ${CMAKE_CURRENT_SOURCE_DIR}/test_profile_checker.sh
                  ${CMAKE_CURRENT_SOURCE_DIR}/../scripts/check-dsh-profile.sh
+)
+
+# install.sh 的 is_official_dsh_web 函数单测：用 sed 从 install.sh 提取
+# 函数体并 source，避免改动 install.sh 结构。20 个用例覆盖官方 dsh web
+# 启动方式 + 各种非官方/危险命令。
+add_test(NAME is-official-dsh-web
+    COMMAND bash ${CMAKE_CURRENT_SOURCE_DIR}/test_is_official_dsh_web.sh
+                 ${CMAKE_CURRENT_SOURCE_DIR}/../packaging/install.sh
 )
 
 # 统一更新计划模型测试：纯数据合并，不触发网络/进程/UI，可稳定运行。
@@ -237,3 +245,14 @@ target_include_directories(dsh-shutdown-dialogs-test PRIVATE
 )
 add_test(NAME shutdown-dialogs COMMAND dsh-shutdown-dialogs-test)
 set_tests_properties(shutdown-dialogs PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+
+# 同步 QProcess 工具测试：用 /bin/echo / /bin/false / /bin/sleep 覆盖
+# 正常退出 / 非零退出 / 不存在命令 / 超时 kill / MergedChannels 五条路径。
+add_executable(dsh-run-sync-process-test test_run_sync_process.cpp)
+target_link_libraries(dsh-run-sync-process-test PRIVATE
+    Qt6::Core Qt6::Test dsh_desktop_core
+)
+target_include_directories(dsh-run-sync-process-test PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src
+)
+add_test(NAME run-sync-process COMMAND dsh-run-sync-process-test)

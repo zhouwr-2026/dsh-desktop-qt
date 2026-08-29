@@ -42,6 +42,10 @@ QString DownloadInterceptor::defaultFilename(const QUrl& url) {
             if (c.isLetterOrNumber() || c == '-' || c == '_') safe.append(c);
             else safe.append('_');
         }
+        // 防御性长度兜底：避免恶意超长 sessionId 让最终文件名逼近
+        // NAME_MAX(255)，导致 QFileDialog / OS 文件操作边界异常。
+        // (变更理由: 安全审查 L-1)
+        if (safe.size() > 128) safe = safe.left(128);
         if (!safe.isEmpty()) return QStringLiteral("dsh-session-%1.zip").arg(safe);
     }
     QString name = QFileInfo(url.path()).fileName();

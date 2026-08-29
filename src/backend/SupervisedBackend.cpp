@@ -2,6 +2,9 @@
 // @author zhouwr
 #include "SupervisedBackend.h"
 
+#include "../updater/Updater.h"
+#include "../util/HttpProbe.h"
+
 #include <QDir>
 #include <QFile>
 #include <QStandardPaths>
@@ -12,17 +15,7 @@
 
 namespace dsh::backend {
 
-namespace {
-bool httpProbe(const QString& url) {
-    QProcess curl;
-    curl.start("curl", {"-s", "-o", "/dev/null", "-w", "%{http_code}",
-                        "--max-time", "1", url + QStringLiteral("/")});
-    if (!curl.waitForFinished(1500)) return false;
-    bool ok = false;
-    const int code = QString::fromLocal8Bit(curl.readAllStandardOutput()).toInt(&ok);
-    return ok && code >= 200 && code < 500;
-}
-}  // namespace
+// httpProbe 已下沉到 ``dsh::util::httpProbe``（util/HttpProbe.{h,cpp}）。
 
 QString SupervisedBackend::resolveDshBin() {
     const QByteArray env = qgetenv("DSH_BIN");
@@ -50,7 +43,7 @@ SupervisedBackend::~SupervisedBackend() {
 }
 
 bool SupervisedBackend::isRunning() const {
-    return httpProbe(url_);
+    return dsh::util::httpProbe(url_);
 }
 
 Status SupervisedBackend::status() {
@@ -61,6 +54,11 @@ Status SupervisedBackend::status() {
     s.origin = dsh::service::ServiceOrigin::SupervisedFallback;
     s.manageable = true;
     s.owner = currentUserName();
+    // Supervised 模式必须知道当前 dsh CLI 版本，以供上层在启动前做最低版本
+    // 校验（见 dsh::updater::kMinimumDshVersion）。复用 Updater::readLocalVersion
+    // 的 package.json 探测，避免重复维护路径列表。
+    // (变更理由: 依赖审查建议 P0-3, 启动期校验)
+    s.dshVersion = dsh::updater::Updater::readLocalVersion();
     // DSH_HOME：子进程启动时遵循环境的 DSH_HOME，缺省为 ~/.dsh。
     const QByteArray envHome = qgetenv("DSH_HOME");
     s.dshHome = envHome.isEmpty()

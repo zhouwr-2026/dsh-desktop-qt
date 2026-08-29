@@ -14,6 +14,17 @@
 
 namespace dsh::updater {
 
+/// README 与 installer 声明的 @deepseek-ai/dsh 最低支持版本。
+/// (变更理由: 依赖审查建议 P0-3)
+inline constexpr const char* kMinimumDshVersion = "0.1.0-rc.7";
+
+/// 判断 ``current`` 是否满足最低版本 ``kMinimumDshVersion``。
+/// - current 为空（无法探测 dsh 版本）→ 返回 ``Unknown``；
+/// - current 非空但非合法 SemVer → 返回 ``Invalid``；
+/// - 否则按严格 SemVer 比较，返回 ``TooOld`` 或 ``Ok``。
+enum class MinimumVersionCheck { Ok, TooOld, Invalid, Unknown };
+MinimumVersionCheck checkMinimumDshVersion(const QString& current);
+
 struct Status {
     QString current;             // 当前本地版本，空字符串表示未安装
     QString latest;              // npm latest 版本，空字符串表示网络失败

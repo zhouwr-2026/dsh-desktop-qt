@@ -1,134 +1,122 @@
-# DSH Desktop — Native Linux/KDE Plasma 6 wrapper for DeepSeek Harness
+# DSH Desktop — DeepSeek Harness 原生 Linux 桌面端
 
-DSH Desktop is a C++17/Qt 6 system-tray application for the official
-[DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) web UI.
-It embeds the UI with Qt WebEngine and integrates with KDE Plasma without
-Electron, Tauri, or a Python runtime.
+DSH Desktop 是使用 C++17 与 Qt 6 开发的 DeepSeek Harness 原生桌面包装器。它通过 Qt WebEngine 嵌入官方 Web 界面，提供系统托盘、原生对话框、主题图标、更新与 systemd 服务管理，不依赖 Electron、Tauri 或 Python 运行时。
 
-## Features
+## 功能
 
-- Persistent `QSystemTrayIcon` menu and native Qt dialogs.
-- Persistent Qt WebEngine profile for login sessions, cache, and cookies.
-- Authenticated session-export downloads handled by WebEngine with a native
-  save dialog, progress display, and desktop notification.
-- External HTTP(S) links opened in the system browser.
-- Theme-aware tray, window, taskbar, and dialog icons; the black/white whale
-  pair is the SVG-only canonical source in `assets/` (embedded via
-  `assets/icons.qrc`, no PNG variants).
-- Unified, single-action update for both the DSH backend (`dsh` CLI / npm)
-  and the desktop build (project Gitee releases), run from one native dialog
-  and a dedicated `dsh-desktop-updater` helper.
-- Read-only `dsh-web.service` discovery that validates and reuses an existing
-  official unit, with a supervised `dsh web` fallback and consent before
-  starting an existing inactive or failed official service.
-- Asynchronous backend health monitoring and update checks.
+- 常驻系统托盘与原生 Qt 菜单。
+- 持久化 WebEngine 登录会话、缓存与 Cookie。
+- 会话导出下载、原生保存对话框、进度显示与桌面通知。
+- 外部 HTTP/HTTPS 链接交给系统浏览器。
+- KDE Plasma 深色/浅色主题图标联动，并为 GNOME/XFCE 提供 hicolor 回退图标。
+- 统一检查 `dsh` 后端与桌面端更新。
+- 只读发现并校验现有 `dsh-web.service`；没有有效服务时使用 supervised `dsh web` 子进程。
+- 后端健康检查、自动恢复提示和安全的安装/卸载助手。
 
-## Requirements
+## 系统要求
 
-- Arch Linux or a derivative
-- KDE Plasma 6 (other Linux desktops may have reduced integration)
-- Qt 6.5 or newer: Core, GUI, Widgets, Network, D-Bus, SVG, and WebEngine.
-  Chromium's web-page dark forcing (`QWebEngineSettings::ForceDarkMode`)
-  exists only from Qt 6.7; it is guarded by a compile-time version check, so
-  on Qt 6.5 / 6.6 the desktop degrades gracefully instead of forcing inverted
-  web rendering.
-- CMake, Ninja, libxcb, polkit, Node.js/npm, and an installed `dsh` CLI
+- Qt 6.6 或更高版本：Core、Gui、Widgets、Network、DBus、Svg、WebEngine。
+- libxcb 1.17 或更高版本。
+- CMake 3.19+、Ninja、PkgConfig。
+- systemd、polkit、Node.js/npm。
+- `@deepseek-ai/dsh >= 0.1.0-rc.7`。
 
-## Install
+支持 Arch Linux、Debian/Ubuntu、Fedora/RHEL/openSUSE 和其它使用 systemd 的 Linux。详细兼容范围与包名见 [Linux 多发行版安装指南](docs/INSTALL-LINUX.zh.md)。
 
-```sh
+## 快速安装
+
+### Arch Linux
+
+```bash
 sudo packaging/install.sh
 ```
 
-The installer builds the C++ application, installs it under `/usr`, registers
-the desktop/autostart entries and theme-aware icons, and configures the theme
-export service. It detects and reuses an existing `dsh-web.service`; the
-decision to start an existing inactive or failed official service is deferred
-to the desktop, which asks the user for consent at runtime rather than
-blindly starting a second `dsh web`.
+### DEB / RPM / 通用压缩包
 
-## Backend management
+正式发布页会提供：
 
-For loopback URLs, DSH Desktop runs a read-only discovery pass over the
-system and current-user `dsh-web.service` units. A candidate is only reused
-when it loads (`LoadState=loaded`) and its `ExecStart` invokes the official
-`dsh web`; when both scopes are valid it prefers the current user's user-level
-unit. If no valid unit exists it starts and supervises `dsh web` directly.
-Explicit remote URLs use external mode and are never started, stopped, or
-restarted by the desktop application.
+- `dsh-desktop_0.1.0_amd64.deb`
+- `dsh-desktop-0.1.0-1.x86_64.rpm`
+- `dsh-desktop-0.1.0-Linux.tar.gz`
+- Arch `PKGBUILD` / `.pkg.tar.zst`
 
-An existing *inactive* or *failed* official service is not started
-unconditionally: the desktop shows a native consent prompt and only starts it
-after the user confirms. The ready-made service pieces (read-only discovery,
-origin recording, the detect→reuse→provision decision model) are implemented;
-installer-driven provisioning and the richer unified service-manager UI remain
-planned (see
-[docs/DSH-DESKTOP-SERVICE-PLAN.zh.md](docs/DSH-DESKTOP-SERVICE-PLAN.zh.md)).
+完整命令见 [docs/INSTALL-LINUX.zh.md](docs/INSTALL-LINUX.zh.md)。
 
-The quit dialog only stops a managed backend when the user selects that
-option. Closing the main window hides it to the tray.
+## 后端管理
 
-## Updates
+对于 loopback 地址，DSH Desktop 会只读检查 system 与 user 两个 scope 的 `dsh-web.service`。只有 `LoadState=loaded` 且 `ExecStart` 调用官方 `dsh web` 的服务才会被复用。已有服务处于 inactive 或 failed 时，桌面端必须先获得用户确认才会启动。
 
-An automatic check runs 60 seconds after launch, and the tray's "Check for
-updates" action runs an on-demand check. A background worker checks both the
-installed `dsh` CLI against the npm registry and the desktop build against the
-project's Gitee releases. The two results are merged into a single plan shown
-as one "Update to latest" tray action; the native update dialog lists both
-components, defaults to every updateable one (backend first), and runs them
-serially with an indeterminate (busy) progress bar.
+显式远程 URL 使用 External 模式，桌面端不会启动、停止或重启远程服务。远程 URL 应由用户自行确认可信性。
 
-The backend component is upgraded through the existing asynchronous
-polkit-aware updater; the desktop component downloads its selected asset,
-verifies its SHA-256, and hands off to `dsh-desktop-updater`, which replaces
-the running binary in place (with a `--pid` / `--source` / `--destination` /
-`--sha256` / `--install-prefix` contract) without stopping the backend.
+## 更新与网络访问
 
-## Build and test
+启动后约 60 秒，桌面端会访问：
 
-```sh
-# Development: RelWithDebInfo plus the full test suite
+- npm 官方注册表：检查 `@deepseek-ai/dsh` 版本；
+- 项目 Gitee Release API：检查桌面端版本。
+
+托盘菜单也可以手动触发检查。桌面端更新包会验证 SHA-256，再交给独立 `dsh-desktop-updater` 原子替换运行中的程序。
+
+## 构建与测试
+
+```bash
 cmake --preset dev
 cmake --build build/dev --parallel
 ctest --test-dir build/dev --output-on-failure
 
-# Packaging and deployment: Release with a /usr install prefix
 cmake --preset release
 cmake --build build/release --parallel
 ctest --test-dir build/release --output-on-failure
 ```
 
-The shared presets only generate `build/dev/` and `build/release/`. Put local
-overrides in the ignored `CMakeUserPresets.json` instead of creating additional
-`cmake-build-*` trees.
+完整端到端验证：
 
-Useful diagnostic modes:
+```bash
+bash scripts/smoke.sh
+```
 
-```sh
+生成跨发行版包：
+
+```bash
+bash scripts/package-linux.sh
+```
+
+## 诊断
+
+```bash
 dsh-desktop --help
+dsh-desktop --version
 dsh-desktop --probe
 dsh-desktop --smoke
 dsh-desktop --self-test
 ```
 
-`--help`, `--version`, `--probe`, and `--smoke` work without a graphical
-display. `--self-test` automatically uses the offscreen Qt platform unless an
-explicit platform is configured.
+日志默认写入 Qt `AppDataLocation`，也可以使用 `--log-file <路径>` 覆盖。
 
-Runtime logs are written to the Qt `AppDataLocation` by default. Use
-`--log-file <path>` to override the destination.
+## 卸载
 
-For detailed Chinese documentation, see [README.zh.md](README.zh.md).
+源码安装：
 
-## Uninstall
-
-```sh
+```bash
 sudo packaging/install.sh --uninstall
 ```
 
-User configuration, WebEngine profile data, and downloaded exports are kept
-unless removed manually.
+DEB/RPM/Arch 包请使用对应包管理器卸载。用户配置、WebEngine 数据、下载文件和 DSH_HOME 默认保留。
 
-## License
+## 文档
+
+- [Linux 多发行版安装指南](docs/INSTALL-LINUX.zh.md)
+- [0.1.0 发布说明](docs/RELEASE-NOTES-0.1.0.zh.md)
+- [依赖清单](docs/DEPENDENCIES.md)
+- [服务架构方案](docs/DSH-DESKTOP-SERVICE-PLAN.zh.md)
+- [安全审核报告](docs/SECURITY-REVIEW-2026-08-28.md)
+- [安全策略（披露漏洞）](SECURITY.md)
+- [变更日志](CHANGELOG.md)
+- [贡献指南](CONTRIBUTING.md)
+- [支持与反馈](SUPPORT.md)
+- [发布流程（维护者）](docs/RELEASING.md)
+- [CI 工作流](.github/workflows/release.yml)
+
+## 许可证
 
 MIT

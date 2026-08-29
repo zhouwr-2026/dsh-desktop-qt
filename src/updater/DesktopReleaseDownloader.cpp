@@ -2,6 +2,8 @@
 // @author zhouwr
 #include "DesktopReleaseDownloader.h"
 
+#include "../util/Sha256.h"
+
 #include <QCryptographicHash>
 #include <QDir>
 #include <QFile>
@@ -32,25 +34,8 @@ bool isGiteeHost(const QString& host) {
     return h == QStringLiteral("gitee.com") || h.endsWith(QLatin1String(".gitee.com"));
 }
 
-/// 流式计算文件 SHA-256（小写十六进制，64 字符）。
-bool computeFileSha256(const QString& path, QString* outHex) {
-    QFile file(path);
-    if (!file.open(QIODevice::ReadOnly)) {
-        return false;
-    }
-    QCryptographicHash hash(QCryptographicHash::Sha256);
-    static constexpr qint64 kChunkSize = 1 << 20;  // 1 MiB
-    QByteArray chunk;
-    while (!file.atEnd()) {
-        chunk = file.read(kChunkSize);
-        if (chunk.isEmpty()) {
-            return false;
-        }
-        hash.addData(chunk);
-    }
-    *outHex = QString::fromLatin1(hash.result().toHex());
-    return true;
-}
+/// SHA-256 计算已下沉到 ``dsh::util::computeFileSha256``（util/Sha256.{h,cpp}）
+/// 本文件不再保留私有实现，避免与 DesktopUpdateHelper 出现流式策略漂移。
 
 void setError(QString* error, const QString& message) {
     if (error != nullptr) {
@@ -430,7 +415,7 @@ void DesktopReleaseDownloader::onFinished() {
             result.cachedPath = targetPath_;
             result.size = bytesReceived_;
             QString digest;
-            if (computeFileSha256(targetPath_, &digest)) {
+            if (dsh::util::computeFileSha256(targetPath_, &digest)) {
                 result.sha256 = digest;
             } else {
                 result.error =

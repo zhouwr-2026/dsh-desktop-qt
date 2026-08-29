@@ -3,6 +3,8 @@
 #include "SystemdBackend.h"
 #include "service/ServiceDiscovery.h"
 #include "service/ServiceOwnership.h"
+#include "../util/HttpProbe.h"
+#include "../util/RunSyncProcess.h"
 
 #include <QEventLoop>
 #include <QJsonArray>
@@ -23,21 +25,6 @@
 namespace dsh::backend {
 
 namespace {
-constexpr int kProbeTimeoutMs = 1500;
-
-// 通过 curl 做 HTTP 健康检查：返回 2xx/3xx/4xx 都算"服务可达"。
-bool httpProbe(const QString& url) {
-    QProcess curl;
-    curl.start("curl", {"-s", "-o", "/dev/null",
-                        "-w", "%{http_code}",
-                        "--max-time", "1",
-                        url + QStringLiteral("/")});
-    if (!curl.waitForFinished(kProbeTimeoutMs)) return false;
-    if (curl.exitStatus() != QProcess::NormalExit) return false;
-    bool ok = false;
-    const int code = QString::fromLocal8Bit(curl.readAllStandardOutput()).toInt(&ok);
-    return ok && code >= 200 && code < 500;
-}
 
 int countActiveTasks(const QJsonValue& value) {
     if (value.isArray()) {
@@ -124,7 +111,7 @@ dsh::service::DetectedService SystemdBackend::detect() {
 }
 
 bool SystemdBackend::isRunning() const {
-    return httpProbe(url_);
+    return dsh::util::httpProbe(url_);
 }
 
 Status SystemdBackend::status() {
@@ -135,15 +122,17 @@ Status SystemdBackend::status() {
     if (QStandardPaths::findExecutable("systemctl").isEmpty()) {
         s.detail = QStringLiteral("systemctl 未安装");
     } else {
-        QProcess p;
         QStringList args;
         if (!isSystemUnit()) args << "--user";
         args << "--no-pager" << "is-active" << unitName_;
-        p.start("systemctl", args);
-        p.waitForFinished(3000);
+        const auto probe = dsh::util::runSyncProcess(
+            QStringLiteral("systemctl"), args,
+            /*timeoutMs=*/3000, /*killGraceMs=*/500);
+        // 即使超时也被 kill：避免子进程泄漏（旧版直接 waitForFinished 不 kill
+        // 是 is-active 探测的真实资源泄漏 bug）。
         s.detail = QStringLiteral("systemd 单元 %1: %2")
                        .arg(unitName_,
-                            QString::fromLocal8Bit(p.readAllStandardOutput()).trimmed());
+                            QString::fromLocal8Bit(probe.stdoutBytes).trimmed());
     }
     // 若上一次 start/stop/restart 失败，把真实错误原因追加到 detail 里，
     // 这样上层 QMessageBox 能给到比"无法停止"更具体的提示。
@@ -201,19 +190,15 @@ QString SystemdBackend::journalSummary(const dsh::service::ServiceInfo& info) co
     if (exe.isEmpty()) return {};
     const QString invocationMatch = systemdInvocationJournalMatch(info.invocationId);
     if (invocationMatch.isEmpty()) return {};
-    QProcess p;
     QStringList args;
     if (info.scope == dsh::service::ServiceScope::User) args << QStringLiteral("--user");
     args << QStringLiteral("--no-pager") << QStringLiteral("-n") << QStringLiteral("100")
          << invocationMatch;
-    p.start(exe, args);
-    if (!p.waitForFinished(2000)) {
-        p.kill();
-        p.waitForFinished(500);
-        return {};
-    }
-    if (p.exitStatus() != QProcess::NormalExit || p.exitCode() != 0) return {};
-    return QString::fromLocal8Bit(p.readAllStandardOutput()).trimmed();
+    const auto probe = dsh::util::runSyncProcess(
+        exe, args, /*timeoutMs=*/2000, /*killGraceMs=*/500);
+    if (!probe.startedOk || !probe.finishedOk) return {};
+    if (probe.crashed || probe.exitCode != 0) return {};
+    return QString::fromLocal8Bit(probe.stdoutBytes).trimmed();
 }
 
 bool SystemdBackend::systemctl(const QString& verb, bool escalateIfNeeded) {
@@ -276,41 +261,36 @@ bool SystemdBackend::systemctl(const QString& verb, bool escalateIfNeeded) {
             }
         }
     }
-    QProcess p;
-    p.setProcessChannelMode(QProcess::MergedChannels);
     emit log(QStringLiteral("backend: %1 %2").arg(program, args.join(' ')));
-    p.start(program, args);
-    if (!p.waitForStarted(5000)) {
-        const QString err = QStringLiteral("backend: 启动 %1 失败（%2）")
-                                .arg(program, p.errorString());
+    // runSyncProcess 内部已合并 waitForStarted + waitForFinished + 超时 kill，
+    // 用 20s 上限作为整个 systemctl 操作的预算（含启动）；旧版本 waitForStarted
+    // 单独用 5000ms，但通常 systemctl 启动几乎瞬时，没必要细分。
+    const auto probe = dsh::util::runSyncProcess(
+        program, args, /*timeoutMs=*/20000, /*killGraceMs=*/3000,
+        QProcess::MergedChannels);
+    const QString output = QString::fromLocal8Bit(probe.stdoutBytes).trimmed();
+    if (!probe.startedOk) {
+        const QString err = QStringLiteral("backend: 启动 %1 失败").arg(program);
         emit log(err);
         lastOperationError_ = err;
         return false;
     }
-    if (!p.waitForFinished(20000)) {
+    if (!probe.finishedOk) {
         const QString err = QStringLiteral("backend: systemctl %1 超时（>20s）").arg(verb);
         emit log(err);
         lastOperationError_ = err;
-        p.kill();
-        p.waitForFinished(3000);
         return false;
     }
-    const QString output = QString::fromLocal8Bit(p.readAll()).trimmed();
-    // 综合判定：进程必须正常退出（未被信号杀），且 exit code 为 0；再叠加
-    // QProcess::error() 看是否有更细粒度的失败原因（如超时被 kill）。
-    const bool normalExit = (p.exitStatus() == QProcess::NormalExit);
-    const bool cleanExit = normalExit && (p.exitCode() == 0);
-    if (cleanExit && p.error() == QProcess::UnknownError) {
+    // 综合判定：进程必须正常退出（未被信号杀），且 exit code 为 0。
+    const bool cleanExit = !probe.crashed && (probe.exitCode == 0);
+    if (cleanExit) {
         emit log(QStringLiteral("backend: systemctl %1 -> ok").arg(verb));
         lastOperationError_.clear();
         return true;
     }
-    const QString reason = !normalExit
-        ? QStringLiteral("进程被信号终止（status=%1）")
-              .arg(static_cast<int>(p.exitStatus()))
-        : (p.error() != QProcess::UnknownError
-              ? QStringLiteral("QProcess 错误：%1").arg(p.errorString())
-              : QStringLiteral("rc=%1").arg(p.exitCode()));
+    const QString reason = probe.crashed
+        ? QStringLiteral("进程被信号终止")
+        : QStringLiteral("rc=%1").arg(probe.exitCode);
     const QString err = output.isEmpty()
         ? QStringLiteral("backend: systemctl %1 失败：%2").arg(verb).arg(reason)
         : QStringLiteral("backend: systemctl %1 失败：%2\n%3")

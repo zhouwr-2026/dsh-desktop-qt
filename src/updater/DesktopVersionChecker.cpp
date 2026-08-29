@@ -2,17 +2,13 @@
 // @author zhouwr
 #include "DesktopVersionChecker.h"
 
+#include "../util/SyncHttp.h"
 #include "BuildVersion.h"
 
-#include <QEventLoop>
 #include <QJsonArray>
 #include <QJsonDocument>
 #include <QJsonParseError>
 #include <QJsonValue>
-#include <QNetworkAccessManager>
-#include <QNetworkReply>
-#include <QNetworkRequest>
-#include <QTimer>
 #include <QUrl>
 
 #include "Updater.h"
@@ -135,51 +131,22 @@ bool DesktopVersionChecker::isUpgrade(
 }
 
 DesktopVersionResult DesktopVersionChecker::fetchLatestRelease(int timeoutSeconds) {
-    QNetworkAccessManager nam;
-    QEventLoop loop;
-    QObject::connect(&nam, &QNetworkAccessManager::finished, &loop, &QEventLoop::quit);
-
     const QUrl url = QUrl::fromEncoded(latestReleaseUrl().toUtf8());
-    QNetworkRequest request(url);
-    request.setRawHeader("Accept", "application/json");
-    request.setRawHeader("User-Agent", "dsh-desktop/" DSH_DESKTOP_VERSION " (Qt6)");
+    const auto resp = dsh::util::syncHttpGet(url, timeoutSeconds);
 
-    QNetworkReply* reply = nam.get(request);
-    QTimer timer;
-    timer.setSingleShot(true);
-    QObject::connect(&timer, &QTimer::timeout, reply, [reply, &loop]() {
-        reply->abort();
-        loop.quit();
-    });
-    timer.start(qMax(1, timeoutSeconds) * 1000);
-    loop.exec();
-
-    if (!reply) {
-        DesktopVersionResult result;
-        result.status = VersionCheckStatus::InvalidResponse;
-        result.detail = QStringLiteral("no network reply");
-        return result;
-    }
-
-    // Qt 对 HTTP 错误状态（如 404）也会把 ``reply->error()`` 置为非 NoError，
-    // 但这类回复带有 HTTP 状态码；真正的网络故障（超时/拒绝连接）没有状态码。
-    // 因此先读取状态码：有状态码则交给 ``parseHttpResponse`` 语义化处理，
-    // 无状态码才判定为 Offline。
-    const int httpStatus = reply->attribute(QNetworkRequest::HttpStatusCodeAttribute).toInt();
-    if (reply->error() != QNetworkReply::NoError && httpStatus <= 0) {
-        const QString error = reply->errorString();
-        reply->deleteLater();
+    if (!resp.ok) {
+        // 网络层失败（超时/连接拒绝等），无 HTTP 状态码 → Offline。
         DesktopVersionResult result;
         result.status = VersionCheckStatus::Offline;
-        result.detail = error;
+        result.detail = resp.errorString.isEmpty()
+                            ? QStringLiteral("no network reply")
+                            : resp.errorString;
         return result;
     }
 
-    const QByteArray body = reply->readAll();
-    reply->deleteLater();
-
     DesktopReleaseInfo release;
-    const VersionCheckStatus status = parseHttpResponse(httpStatus, body, release);
+    const VersionCheckStatus status =
+        parseHttpResponse(resp.httpStatus, resp.body, release);
 
     DesktopVersionResult result;
     result.status = status;

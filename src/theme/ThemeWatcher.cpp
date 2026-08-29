@@ -135,6 +135,10 @@ QString ThemeWatcher::detectKdeTheme(const QStringList& paths) {
 }
 
 QString ThemeWatcher::readKdeConfig() const {
+    // ``DSH_DESKTOP_THEME_FILE`` 是**部署方控制**的覆盖项（默认路径
+    // ``/run/dsh-desktop/theme`` 由 ``dsh-theme-export.service`` 写入）。
+    // 本函数只读取并严格匹配 ``dark`` / ``light`` 字面量，绝不传播文件内容
+    // 到其它通道（参见安全审查 L-3）。
     const QString markerPath = qEnvironmentVariable(
         "DSH_DESKTOP_THEME_FILE", QStringLiteral("/run/dsh-desktop/theme"));
     QFile marker(markerPath);

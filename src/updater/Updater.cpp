@@ -2,23 +2,21 @@
 // @author zhouwr
 #include "Updater.h"
 
+#include "../util/RunSyncProcess.h"
+#include "../util/SyncHttp.h"
 #include "BuildVersion.h"
 
 #include <QDir>
 #include <QElapsedTimer>
-#include <QEventLoop>
 #include <QFile>
 #include <QFileInfo>
 #include <QJsonDocument>
 #include <QJsonObject>
-#include <QNetworkAccessManager>
-#include <QNetworkReply>
-#include <QNetworkRequest>
 #include <QProcess>
 #include <QRegularExpression>
 #include <QStandardPaths>
 #include <QStringList>
-#include <QTimer>
+#include <QUrl>
 
 #include <algorithm>
 #include <utility>
@@ -116,6 +114,10 @@ int compareSemVer(const ParsedSemVer& a, const ParsedSemVer& b) {
     return (ai.size() > bi.size()) - (ai.size() < bi.size());
 }
 
+// 防止 PATH 劫持：调用方不直接走 PATH 解析 pkexec / npm，而是固定 /usr/bin
+// 路径并校验文件主为 root 且非 world/group-writable。本函数只判断文件元数据
+// 是否满足"系统包管理器装的、root 所有、仅 owner 可写"，不接触文件内容。
+// (变更理由: 安全审查 L-5)
 bool isTrustedRootExecutable(const QString& path) {
     const QFileInfo info(path);
     const QFileDevice::Permissions writableByOthers =
@@ -148,44 +150,22 @@ QString Updater::readLocalVersion() {
     // 兜底：调用 ``dsh --version``
     const QString bin = QStandardPaths::findExecutable("dsh");
     if (bin.isEmpty()) return {};
-    QProcess p;
-    p.start(bin, {"--version"});
-    if (!p.waitForFinished(4000)) return {};
-    QString v = QString::fromLocal8Bit(p.readAllStandardOutput());
-    if (v.isEmpty()) v = QString::fromLocal8Bit(p.readAllStandardError());
+    // 用 runSyncProcess 取代裸 waitForFinished：超时也会 kill 子进程，
+    // 避免 dsh 卡住时进程泄漏（旧版只 waitForFinished 不 kill）。
+    const auto probe = dsh::util::runSyncProcess(
+        bin, {"--version"}, /*timeoutMs=*/4000, /*killGraceMs=*/500);
+    if (!probe.startedOk || !probe.finishedOk) return {};
+    QString v = QString::fromLocal8Bit(probe.stdoutBytes);
+    if (v.isEmpty()) v = QString::fromLocal8Bit(probe.stderrBytes);
     return v.trimmed();
 }
 
 QString Updater::fetchLatestVersion(int timeoutSeconds) {
-    QNetworkAccessManager nam;
-    QEventLoop loop;
-    QObject::connect(&nam, &QNetworkAccessManager::finished, &loop, &QEventLoop::quit);
-    QNetworkRequest req(QString::fromLatin1(kRegistry) + QString::fromLatin1(kLatestPath));
-    req.setRawHeader("Accept", "application/json");
-    req.setRawHeader("User-Agent", "dsh-desktop/" DSH_DESKTOP_VERSION " (Qt6)");
-    QNetworkReply* reply = nam.get(req);
-    QTimer timer;
-    timer.setSingleShot(true);
-    QObject::connect(&timer, &QTimer::timeout, reply, [reply, &loop]() {
-        reply->abort();
-        loop.quit();
-    });
-    timer.start(qMax(1, timeoutSeconds) * 1000);
-    loop.exec();
-    if (!reply) return {};
-    if (reply->error() != QNetworkReply::NoError) {
-        reply->deleteLater();
-        return {};
-    }
-    const int httpStatus = reply->attribute(QNetworkRequest::HttpStatusCodeAttribute).toInt();
-    if (httpStatus < 200 || httpStatus >= 300) {
-        reply->deleteLater();
-        return {};
-    }
-    const QByteArray body = reply->readAll();
-    reply->deleteLater();
+    const QUrl url(QString::fromLatin1(kRegistry) + QString::fromLatin1(kLatestPath));
+    const auto resp = dsh::util::syncHttpGet(url, timeoutSeconds);
+    if (!resp.ok || resp.httpStatus < 200 || resp.httpStatus >= 300) return {};
     QJsonParseError err{};
-    const QJsonDocument doc = QJsonDocument::fromJson(body, &err);
+    const QJsonDocument doc = QJsonDocument::fromJson(resp.body, &err);
     if (err.error != QJsonParseError::NoError) return {};
     return doc.object().value("version").toString();
 }
@@ -234,6 +214,11 @@ bool Updater::performUpdate() {
         packageSpec,
         "--no-audit", "--no-fund"
     };
+    // pkexec 提权场景下不能用 ``runSyncProcess``：用户需要在 polkit 弹窗
+    // 输入密码，10 分钟容忍 + 优雅退出（terminate 优先、kill 兜底）是必
+    // 要的，而非"超时即 kill"。轮询 ``waitForFinished(500)`` 让 Qt 事件循
+    // 环在等待期间继续转（长阻塞会冻 UI 与其它信号；500ms 是 Qt 文档对
+    // waitForFinished 的官方建议粒度）。
     QProcess p;
     p.setProgram(pkexec);
     p.setArguments(args);
@@ -250,7 +235,8 @@ bool Updater::performUpdate() {
         p.waitForFinished(500);
     }
     if (p.state() != QProcess::NotRunning) {
-        emit log("updater: 更新进程超时，正在终止");
+        emit log("updater: 更新进程超时，正在优雅终止");
+        // 优雅退出：先 SIGTERM 给 npm 机会清理；3s 未退出则升级到 SIGKILL。
         p.terminate();
         if (!p.waitForFinished(3000)) {
             p.kill();
@@ -280,4 +266,13 @@ int dsh::updater::compareVersions(const QString& a, const QString& b) {
 bool dsh::updater::isValidSemVer(const QString& version) {
     ParsedSemVer parsed;
     return parseSemVer(version, parsed);
+}
+
+dsh::updater::MinimumVersionCheck
+dsh::updater::checkMinimumDshVersion(const QString& current) {
+    if (current.isEmpty()) return MinimumVersionCheck::Unknown;
+    if (!isValidSemVer(current)) return MinimumVersionCheck::Invalid;
+    return compareVersions(current, QString::fromLatin1(kMinimumDshVersion)) >= 0
+               ? MinimumVersionCheck::Ok
+               : MinimumVersionCheck::TooOld;
 }

@@ -50,7 +50,13 @@ LogViewer::LogViewer(const QString& log_path, QWidget* parent) : QDialog(parent)
     text->setFontPointSize(9);
 
     QFile f(resolved);
-    if (!f.open(QIODevice::ReadOnly | QIODevice::Text)) {
+    // 先做 isReadable 预校验：避免在路径存在但无读权限(例如其他用户/进程的
+    // /proc/<pid>/environ、/etc/shadow 等)时静默走 fallback，给出明确拒绝提示。
+    // (变更理由: 安全审查 L-2)
+    const QFileInfo info(resolved);
+    if (info.exists() && !info.isReadable()) {
+        text->setPlainText(tr("(日志文件不可读：%1)").arg(info.absoluteFilePath()));
+    } else if (!f.open(QIODevice::ReadOnly | QIODevice::Text)) {
         text->setPlainText(tr("(尚未生成日志 — 用 --log-file 选项启动后会写到此处)"));
     } else {
         const qint64 size = f.size();

@@ -19,10 +19,12 @@
 #include <QTest>
 
 #include "../src/service/DshServiceManager.h"
+#include "../src/service/SystemctlCommandBuilder.h"
 
 using dsh::service::DetectedService;
 using dsh::service::DshServiceManager;
 using dsh::service::OperationResult;
+using dsh::service::ProcessExitStatus;
 using dsh::service::ProcessOutcome;
 using dsh::service::ResolvedCommand;
 using dsh::service::ServiceError;
@@ -30,6 +32,7 @@ using dsh::service::ServiceInfo;
 using dsh::service::ServiceOperation;
 using dsh::service::ServiceResult;
 using dsh::service::ServiceScope;
+using dsh::service::SystemctlCommandBuilder;
 
 namespace {
 
@@ -112,19 +115,19 @@ void TestServiceManager::initTestCase() {
 // ---------------------------------------------------------------------------
 
 void TestServiceManager::systemArgumentsUserScope() {
-    QCOMPARE(DshServiceManager::systemctlArguments(
+    QCOMPARE(SystemctlCommandBuilder::systemctlArguments(
                  ServiceOperation::Start, ServiceScope::User,
                  QStringLiteral("dsh-web.service")),
              QStringList({QStringLiteral("--user"), QStringLiteral("--no-pager"),
                           QStringLiteral("start"), QStringLiteral("dsh-web.service")}));
 
-    QCOMPARE(DshServiceManager::systemctlArguments(
+    QCOMPARE(SystemctlCommandBuilder::systemctlArguments(
                  ServiceOperation::Stop, ServiceScope::User,
                  QStringLiteral("dsh-web.service")),
              QStringList({QStringLiteral("--user"), QStringLiteral("--no-pager"),
                           QStringLiteral("stop"), QStringLiteral("dsh-web.service")}));
 
-    QCOMPARE(DshServiceManager::systemctlArguments(
+    QCOMPARE(SystemctlCommandBuilder::systemctlArguments(
                  ServiceOperation::Status, ServiceScope::User,
                  QStringLiteral("dsh-web.service")),
              QStringList({QStringLiteral("--user"), QStringLiteral("--no-pager"),
@@ -132,13 +135,13 @@ void TestServiceManager::systemArgumentsUserScope() {
 }
 
 void TestServiceManager::systemArgumentsSystemScope() {
-    QCOMPARE(DshServiceManager::systemctlArguments(
+    QCOMPARE(SystemctlCommandBuilder::systemctlArguments(
                  ServiceOperation::Restart, ServiceScope::System,
                  QStringLiteral("dsh-web.service")),
              QStringList({QStringLiteral("--no-pager"), QStringLiteral("restart"),
                           QStringLiteral("dsh-web.service")}));
 
-    QCOMPARE(DshServiceManager::systemctlArguments(
+    QCOMPARE(SystemctlCommandBuilder::systemctlArguments(
                  ServiceOperation::Discovery, ServiceScope::System,
                  QStringLiteral("dsh-web.service")),
              QStringList({QStringLiteral("--no-pager"), QStringLiteral("show"),
@@ -150,18 +153,18 @@ void TestServiceManager::commandElevation() {
     const qint64 euidRoot = 0;
 
     // 系统级 + 变更 + 非 root → 提权。
-    QVERIFY(DshServiceManager::operationNeedsElevation(
+    QVERIFY(SystemctlCommandBuilder::operationNeedsElevation(
         ServiceOperation::Start, ServiceScope::System, euidNonRoot));
-    QVERIFY(DshServiceManager::operationNeedsElevation(
+    QVERIFY(SystemctlCommandBuilder::operationNeedsElevation(
         ServiceOperation::Restart, ServiceScope::System, euidNonRoot));
-    QVERIFY(DshServiceManager::operationNeedsElevation(
+    QVERIFY(SystemctlCommandBuilder::operationNeedsElevation(
         ServiceOperation::Stop, ServiceScope::System, euidNonRoot));
 
     // 系统级 + 变更 + root → 不提权。
-    QVERIFY(!DshServiceManager::operationNeedsElevation(
+    QVERIFY(!SystemctlCommandBuilder::operationNeedsElevation(
         ServiceOperation::Start, ServiceScope::System, euidRoot));
 
-    const ResolvedCommand elevated = DshServiceManager::resolveCommand(
+    const ResolvedCommand elevated = SystemctlCommandBuilder::resolveCommand(
         ServiceOperation::Start, ServiceScope::System, QStringLiteral("dsh-web.service"),
         QStringLiteral("/usr/bin/systemctl"), QStringLiteral("/usr/bin/pkexec"),
         euidNonRoot);
@@ -177,17 +180,17 @@ void TestServiceManager::noElevationForReadOnlyAndUserScope() {
     const qint64 euidNonRoot = 1000;
 
     // 系统级 + 只读（Status/Discovery）+ 非 root → 不提权。
-    QVERIFY(!DshServiceManager::operationNeedsElevation(
+    QVERIFY(!SystemctlCommandBuilder::operationNeedsElevation(
         ServiceOperation::Status, ServiceScope::System, euidNonRoot));
-    QVERIFY(!DshServiceManager::operationNeedsElevation(
+    QVERIFY(!SystemctlCommandBuilder::operationNeedsElevation(
         ServiceOperation::Discovery, ServiceScope::System, euidNonRoot));
 
     // 用户级 + 变更 + 非 root → 不提权。
-    QVERIFY(!DshServiceManager::operationNeedsElevation(
+    QVERIFY(!SystemctlCommandBuilder::operationNeedsElevation(
         ServiceOperation::Stop, ServiceScope::User, euidNonRoot));
 
     // pkexec 缺省（空）时，即使系统级变更也不包裹。
-    const ResolvedCommand noPkexec = DshServiceManager::resolveCommand(
+    const ResolvedCommand noPkexec = SystemctlCommandBuilder::resolveCommand(
         ServiceOperation::Restart, ServiceScope::System, QStringLiteral("dsh-web.service"),
         QStringLiteral("/usr/bin/systemctl"), QString(), euidNonRoot);
     QCOMPARE(noPkexec.program, QStringLiteral("/usr/bin/systemctl"));
@@ -197,14 +200,14 @@ void TestServiceManager::noElevationForReadOnlyAndUserScope() {
 }
 
 void TestServiceManager::journalctlArgumentsUserAndSystem() {
-    QCOMPARE(DshServiceManager::journalctlArguments(
+    QCOMPARE(SystemctlCommandBuilder::journalctlArguments(
                  ServiceScope::User, QStringLiteral("dsh-web.service"), 50, true),
              QStringList({QStringLiteral("--user"), QStringLiteral("--no-pager"),
                           QStringLiteral("-n"), QStringLiteral("50"),
                           QStringLiteral("-u"), QStringLiteral("dsh-web.service"),
                           QStringLiteral("-f")}));
 
-    QCOMPARE(DshServiceManager::journalctlArguments(
+    QCOMPARE(SystemctlCommandBuilder::journalctlArguments(
                  ServiceScope::System, QStringLiteral("dsh-web.service"), 10, false),
              QStringList({QStringLiteral("--no-pager"), QStringLiteral("-n"),
                           QStringLiteral("10"), QStringLiteral("-u"),
@@ -213,23 +216,23 @@ void TestServiceManager::journalctlArgumentsUserAndSystem() {
 
 void TestServiceManager::daemonReloadAndEnableArguments() {
     // daemon-reload 无 unit 参数。
-    QCOMPARE(DshServiceManager::systemctlArguments(
+    QCOMPARE(SystemctlCommandBuilder::systemctlArguments(
                  ServiceOperation::DaemonReload, ServiceScope::User, QString()),
              QStringList({QStringLiteral("--user"), QStringLiteral("--no-pager"),
                           QStringLiteral("daemon-reload")}));
-    QCOMPARE(DshServiceManager::systemctlArguments(
+    QCOMPARE(SystemctlCommandBuilder::systemctlArguments(
                  ServiceOperation::DaemonReload, ServiceScope::System, QString()),
              QStringList({QStringLiteral("--no-pager"),
                           QStringLiteral("daemon-reload")}));
 
     // enable 带 unit 名。
-    QCOMPARE(DshServiceManager::systemctlArguments(
+    QCOMPARE(SystemctlCommandBuilder::systemctlArguments(
                  ServiceOperation::Enable, ServiceScope::User,
                  QStringLiteral("dsh-web.service")),
              QStringList({QStringLiteral("--user"), QStringLiteral("--no-pager"),
                           QStringLiteral("enable"),
                           QStringLiteral("dsh-web.service")}));
-    QCOMPARE(DshServiceManager::systemctlArguments(
+    QCOMPARE(SystemctlCommandBuilder::systemctlArguments(
                  ServiceOperation::Enable, ServiceScope::System,
                  QStringLiteral("dsh-web.service")),
              QStringList({QStringLiteral("--no-pager"), QStringLiteral("enable"),
@@ -241,25 +244,25 @@ void TestServiceManager::daemonReloadEnableElevation() {
     const qint64 euidRoot = 0;
 
     // 系统级 + reload/enable + 非 root -> 提权。
-    QVERIFY(DshServiceManager::operationNeedsElevation(
+    QVERIFY(SystemctlCommandBuilder::operationNeedsElevation(
         ServiceOperation::DaemonReload, ServiceScope::System, euidNonRoot));
-    QVERIFY(DshServiceManager::operationNeedsElevation(
+    QVERIFY(SystemctlCommandBuilder::operationNeedsElevation(
         ServiceOperation::Enable, ServiceScope::System, euidNonRoot));
 
     // 系统级 + reload/enable + root -> 不提权。
-    QVERIFY(!DshServiceManager::operationNeedsElevation(
+    QVERIFY(!SystemctlCommandBuilder::operationNeedsElevation(
         ServiceOperation::DaemonReload, ServiceScope::System, euidRoot));
-    QVERIFY(!DshServiceManager::operationNeedsElevation(
+    QVERIFY(!SystemctlCommandBuilder::operationNeedsElevation(
         ServiceOperation::Enable, ServiceScope::System, euidRoot));
 
     // 用户级 + reload/enable -> 不提权。
-    QVERIFY(!DshServiceManager::operationNeedsElevation(
+    QVERIFY(!SystemctlCommandBuilder::operationNeedsElevation(
         ServiceOperation::DaemonReload, ServiceScope::User, euidNonRoot));
-    QVERIFY(!DshServiceManager::operationNeedsElevation(
+    QVERIFY(!SystemctlCommandBuilder::operationNeedsElevation(
         ServiceOperation::Enable, ServiceScope::User, euidNonRoot));
 
     // resolveCommand 在系统级 + 非 root 时用 pkexec 包裹 enable。
-    const ResolvedCommand enabled = DshServiceManager::resolveCommand(
+    const ResolvedCommand enabled = SystemctlCommandBuilder::resolveCommand(
         ServiceOperation::Enable, ServiceScope::System, QStringLiteral("dsh-web.service"),
         QStringLiteral("/usr/bin/systemctl"), QStringLiteral("/usr/bin/pkexec"),
         euidNonRoot);
@@ -277,9 +280,9 @@ void TestServiceManager::daemonReloadEnableElevation() {
 
 void TestServiceManager::validUnitNames() {
     QString error;
-    QVERIFY(DshServiceManager::isValidUnitName(QStringLiteral("dsh-web.service"), &error));
-    QVERIFY(DshServiceManager::isValidUnitName(QStringLiteral("foo.socket"), &error));
-    QVERIFY(DshServiceManager::isValidUnitName(QStringLiteral("a-b_c.target"), &error));
+    QVERIFY(SystemctlCommandBuilder::isValidUnitName(QStringLiteral("dsh-web.service"), &error));
+    QVERIFY(SystemctlCommandBuilder::isValidUnitName(QStringLiteral("foo.socket"), &error));
+    QVERIFY(SystemctlCommandBuilder::isValidUnitName(QStringLiteral("a-b_c.target"), &error));
 }
 
 void TestServiceManager::invalidUnitNames() {
@@ -298,7 +301,7 @@ void TestServiceManager::invalidUnitNames() {
         QStringLiteral("dsh-web.service;rm"),      // 命令分隔符
     };
     for (const QString& name : bad) {
-        QVERIFY2(!DshServiceManager::isValidUnitName(name, &error),
+        QVERIFY2(!SystemctlCommandBuilder::isValidUnitName(name, &error),
                  qPrintable(QStringLiteral("应拒绝: '%1'").arg(name)));
     }
 }
@@ -310,7 +313,7 @@ void TestServiceManager::invalidUnitNames() {
 void TestServiceManager::mapProcessResultSuccessAndFailure() {
     ProcessOutcome ok;
     ok.started = true;
-    ok.exitStatus = QProcess::NormalExit;
+    ok.exitStatus = ProcessExitStatus::Normal;
     ok.exitCode = 0;
     QCOMPARE(asInt(DshServiceManager::mapProcessResult(ok)),
              asInt(ServiceResult::Success));
@@ -324,7 +327,7 @@ void TestServiceManager::mapProcessResultSuccessAndFailure() {
              asInt(ServiceError::NonZeroExit));
 
     ProcessOutcome crash;
-    crash.exitStatus = QProcess::CrashExit;
+    crash.exitStatus = ProcessExitStatus::Crashed;
     QCOMPARE(asInt(DshServiceManager::mapProcessResult(crash)),
              asInt(ServiceResult::Failed));
     QCOMPARE(asInt(DshServiceManager::mapProcessError(crash)),

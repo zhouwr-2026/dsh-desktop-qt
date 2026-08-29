@@ -29,28 +29,20 @@
 
 #include "ServiceInfo.h"
 #include "ServiceDiscovery.h"
+#include "ServiceOperation.h"
 
 #include <QElapsedTimer>
 #include <QObject>
-#include <QProcess>
 #include <QString>
 #include <QStringList>
 #include <QTimer>
 #include <QVector>
 
-namespace dsh::service {
+QT_BEGIN_NAMESPACE
+class QProcess;
+QT_END_NAMESPACE
 
-/// 管理器可执行的异步操作类型。
-enum class ServiceOperation {
-    Start,        ///< systemctl start            （变更，需授权/验证）
-    Stop,         ///< systemctl stop             （变更，需授权/验证）
-    Restart,      ///< systemctl restart          （变更，需授权/验证）
-    Status,       ///< systemctl show -> ServiceStatus （只读）
-    Discovery,    ///< systemctl show (system+user) -> 官方验证 + 选择（只读）
-    JournalTail,  ///< journalctl -u ... [-f]     （只读，长期运行）
-    DaemonReload, ///< systemctl daemon-reload    （补齐后刷新配置，无 unit 参数）
-    Enable,       ///< systemctl enable <unit>    （启用开机自启；只 enable，绝不 start）
-};
+namespace dsh::service {
 
 /// 高层操作结果（operationFinished 的 result 字段）。
 enum class ServiceResult {
@@ -102,21 +94,35 @@ struct OperationResult {
     QString stderrText;      ///< 捕获到的完整 stderr。
 };
 
+/// ``ProcessOutcome`` 用的退出状态枚举，独立于 Qt 的 ``QProcess`` 类型，
+/// 让本头不再需要 include ``<QProcess>``（避免传染其它 include 此头的 TU）。
+/// ``fromQProcessExitStatus`` 在 .cpp 内部做映射。
+/// (变更理由: 头文件卫生，``DshServiceManager.h`` 移除 ``<QProcess>`` 传染)
+enum class ProcessExitStatus { Normal, Crashed };
+
+/// ``ProcessOutcome`` 用的进程错误枚举，覆盖 ``QProcess::ProcessError`` 的
+/// 子集。``fromQProcessError`` 在 .cpp 内部做映射。
+enum class ProcessErrorCode {
+    None,            ///< 无错误（成功退出或仍在运行）
+    FailedToStart,   ///< 进程无法启动（程序缺失 / 权限不足）
+    Crashed,         ///< 进程崩溃（被信号杀）
+    Timedout,        ///< waitFor* 超时
+    WriteError,      ///< 写管道失败
+    ReadError,       ///< 读管道失败
+    Unknown,         ///< 其它未分类错误
+};
+
 /// 进程运行原始结果（供 mapProcessResult / mapProcessError 映射）。纯数据。
 struct ProcessOutcome {
     bool started{true};                       ///< 进程是否成功启动。
     bool timedOut{false};                     ///< 是否超时。
     bool cancelled{false};                    ///< 是否被主动取消。
-    QProcess::ExitStatus exitStatus{QProcess::NormalExit};
+    ProcessExitStatus exitStatus{ProcessExitStatus::Normal};
     int exitCode{0};
-    QProcess::ProcessError processError{QProcess::UnknownError};
+    ProcessErrorCode processError{ProcessErrorCode::Unknown};
 };
 
-/// 一条已解析的完整命令：program + 显式参数列表。
-struct ResolvedCommand {
-    QString program;
-    QStringList arguments;
-};
+// 注：ResolvedCommand struct 已迁移到 SystemctlCommandBuilder.h
 
 /// 只读状态查询的结果（requestStatus 通过 statusResult 信号上报）。
 struct ServiceStatus {
@@ -247,39 +253,13 @@ public:
     bool stopJournalTail();
 
     // -------------------------------------------------------------------
-    // 纯命令参数构建与结果映射（不接触进程，便于单元测试）
+    // 进程结果映射（不接触进程，便于单元测试）
     // -------------------------------------------------------------------
-
-    /// 校验 systemd unit 名：非空、不含 '/'、不以 '.' 开头、无控制/空白/引号/
-    /// 反斜杠、以已知单元后缀结尾。非法时返回 false 并填充 \p error（可空）。
-    static bool isValidUnitName(const QString& unitName, QString* error = nullptr);
-
-    /// 构造传给 systemctl 的自变量列表（不含可执行文件、不含提权包裹）。
-    /// \p operation 为 Start/Stop/Restart/Status/Discovery；JournalTail 走
-    /// journalctlArguments()。
-    static QStringList systemctlArguments(ServiceOperation operation,
-                                          ServiceScope scope,
-                                          const QString& unitName);
-
-    /// 判定操作在给定范围下是否需要提权：仅「系统级 + 变更类 + 非 root」为真。
-    static bool operationNeedsElevation(ServiceOperation operation,
-                                        ServiceScope scope,
-                                        qint64 euid);
-
-    /// 解析最终命令：必要时用 pkexec 包裹 systemctl（显式参数，无 shell）。
-    /// \p empty 的 systemctlExe / pkexecExe 表示不可用（应预先 findExecutable）。
-    static ResolvedCommand resolveCommand(ServiceOperation operation,
-                                          ServiceScope scope,
-                                          const QString& unitName,
-                                          const QString& systemctlExe,
-                                          const QString& pkexecExe,
-                                          qint64 euid);
-
-    /// 构造传给 journalctl 的自变量列表（不含可执行文件）。
-    static QStringList journalctlArguments(ServiceScope scope,
-                                           const QString& unitName,
-                                           int lines,
-                                           bool follow);
+    //
+    // 纯命令构造类已迁移到 SystemctlCommandBuilder
+    // （unit 名校验 / systemctl/journalctl argv 构造 / pkexec 包裹），
+    // 减小本类职责面；剩下三个函数强依赖 ProcessOutcome 与 ServiceInfo，
+    // 留在本类更自然。
 
     /// 把进程运行原始结果映射为高层 ServiceResult。
     static ServiceResult mapProcessResult(const ProcessOutcome& outcome);
@@ -359,8 +339,8 @@ private:
     bool finalized_{false};
     bool processStarted_{false};
     int lastExitCode_{0};
-    QProcess::ExitStatus lastExitStatus_{QProcess::NormalExit};
-    QProcess::ProcessError lastProcessError_{QProcess::UnknownError};
+    ProcessExitStatus lastExitStatus_{ProcessExitStatus::Normal};
+    ProcessErrorCode lastProcessError_{ProcessErrorCode::Unknown};
 
     QString stdoutBuffer_;
     QString stderrBuffer_;

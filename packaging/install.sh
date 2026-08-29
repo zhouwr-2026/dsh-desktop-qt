@@ -34,6 +34,12 @@ need_root() {
 }
 
 run_build_command() {
+  # 防御性检查：参数必须由本脚本内部提供，避免未来重构时被外部 CLI
+  # 参数填满，导致在 SUDO_USER 下执行非预期命令。
+  # (变更理由: 安全审查 L-4)
+  if [[ "$#" -eq 0 ]]; then
+    die "run_build_command 未传参数"
+  fi
   if [[ -n "${SUDO_USER:-}" && "${SUDO_USER}" != root ]]; then
     sudo -u "${SUDO_USER}" -- "$@"
   else
@@ -50,7 +56,7 @@ ensure_pkgs() {
   fi
 
   local missing=()
-  for pkg in qt6-base qt6-webengine qt6-svg qt6-tools libxcb cmake ninja extra-cmake-modules npm polkit procps-ng; do
+  for pkg in qt6-base qt6-webengine qt6-svg qt6-tools libxcb cmake ninja pkgconf npm polkit procps-ng knotifications; do
     if ! pacman -Q "$pkg" >/dev/null 2>&1; then
       missing+=("$pkg")
     fi
@@ -60,7 +66,7 @@ ensure_pkgs() {
     log "将安装缺失的软件包: ${missing[*]}"
     pacman -S --needed --noconfirm "${missing[@]}"
   else
-    log "Qt6 / cmake / ninja / ECM 已就绪"
+    log "Qt6 / cmake / ninja 已就绪"
   fi
 
   # dsh 是 npm 全局包，pacman 仓库没有
@@ -69,6 +75,11 @@ ensure_pkgs() {
   fi
   if ! command -v dsh >/dev/null 2>&1; then
     log "未检测到 dsh CLI；通过 npm 全局安装"
+    # 关闭 npm install 脚本以最小化供应链投毒面：
+    # @deepseek-ai/dsh 是深名空间官方包，但 .npmrc / preinstall 仍是常规
+    # 攻击面，安装期我们只关心二进制落盘，不执行任意 JS。
+    # (变更理由: 依赖审查建议 #6)
+    npm config set ignore-scripts true
     npm install -g @deepseek-ai/dsh
   else
     log "dsh 已就绪：$(command -v dsh)"
@@ -92,8 +103,9 @@ install_icons() {
   # 不再用 rsvg-convert 生成可选 PNG 位图变体。
   local icon_dir="/usr/share/icons/hicolor/scalable/apps"
   mkdir -p "$icon_dir"
-  cp -f "$ROOT/assets/dsh-whale-black.svg" "$icon_dir/dsh-whale-black.svg"
-  cp -f "$ROOT/assets/dsh-whale-white.svg" "$icon_dir/dsh-whale-white.svg"
+  install -Dm644 "$ROOT/assets/dsh-whale-black.svg" "$icon_dir/dsh-whale.svg"
+  install -Dm644 "$ROOT/assets/dsh-whale-black.svg" "$icon_dir/dsh-whale-black.svg"
+  install -Dm644 "$ROOT/assets/dsh-whale-white.svg" "$icon_dir/dsh-whale-white.svg"
 
   # KWin/Plasma 使用 .desktop 的 dsh-whale 名称：Breeze 下映射黑鲸鱼，
   # Breeze Dark 下映射白鲸鱼。两套主题使用同一名称才能动态切换。
@@ -109,6 +121,16 @@ install_icons() {
   fi
 }
 
+install_license() {
+  log "安装许可证"
+  install -Dm644 "$ROOT/LICENSE" \
+    "/usr/share/licenses/dsh-desktop/LICENSE"
+}
+
+install_system_files() {
+  log "安装 systemd 单元与桌面自启动条目"
+  bash "$ROOT/packaging/post-install.sh" --prefix /usr
+}
 install_desktop_file() {
   log "安装全用户应用菜单与自启动"
   local apps_dir="/usr/share/applications"
@@ -211,8 +233,9 @@ main() {
   ensure_pkgs
   build_cmake
   install_artifacts
+  install_license
   install_icons
-  install_desktop_file
+  install_system_files
   configure_dsh_service
   configure_theme_export
 

@@ -3,11 +3,17 @@
 #include "DshDesktopApp.h"
 
 #include "../icon/IconLoader.h"
+#include "../theme/ThemeWatcher.h"
 #include "../updater/DesktopVersionChecker.h"
+#include "../updater/UpdatePlan.h"
 #include "../updater/Updater.h"
+#include "AboutDialog.h"
 #include "BuildVersion.h"
+#include "DshWindow.h"
 #include "ExitDialog.h"
+#include "LogViewer.h"
 #include "RestartDialog.h"
+#include "TrayController.h"
 #include "UpdateDialog.h"
 
 #include <QAbstractSocket>
@@ -601,6 +607,32 @@ bool DshDesktopApp::ensureBackendStarted(const dsh::backend::Status& status) {
         logger_.log("ensureBackendStarted: 后端已在运行，无需启动");
         return true;
     }
+    // 启动期最低版本校验（仅 Supervised 模式）：systemd 模式下 unit 由用户
+    // 显式配置，不在桌面端硬性干预；Unknown/Invalid 视为不可知，仅记录日志
+    // 不阻塞（允许老 dsh 或测试覆盖路径继续工作）。
+    // (变更理由: 依赖审查建议 P0-3)
+    if (current.mode == dsh::backend::Mode::Supervised
+        && !current.dshVersion.isEmpty()) {
+        const auto verCheck = dsh::updater::checkMinimumDshVersion(current.dshVersion);
+        if (verCheck == dsh::updater::MinimumVersionCheck::TooOld) {
+            logger_.log(QStringLiteral("ensureBackendStarted: dsh CLI 版本过旧 (current=%1, min=%2)")
+                            .arg(current.dshVersion,
+                                 QString::fromLatin1(dsh::updater::kMinimumDshVersion)));
+            QMessageBox::warning(window_, tr("DSH 后台服务"),
+                                 tr("检测到本地 dsh CLI 版本过旧（%1），"
+                                    "DSH Desktop 需要 ≥ %2。\n\n"
+                                    "请执行以下命令升级：\n"
+                                    "  sudo npm i -g @deepseek-ai/dsh@latest\n\n"
+                                    "升级后重启 DSH Desktop。")
+                                     .arg(current.dshVersion,
+                                          QString::fromLatin1(dsh::updater::kMinimumDshVersion)));
+            return false;
+        }
+        if (verCheck == dsh::updater::MinimumVersionCheck::Invalid) {
+            logger_.log(QStringLiteral("ensureBackendStarted: dsh CLI 版本字符串非法: %1")
+                            .arg(current.dshVersion));
+        }
+    }
     // 第一次尝试：直接 start。失败再考虑自动安装。
     if (backend_->start()) {
         logger_.log("ensureBackendStarted: 后端已启动");
@@ -744,31 +776,52 @@ bool DshDesktopApp::ensureBackendStarted(const dsh::backend::Status& status) {
     return false;
 }
 
-void DshDesktopApp::performQuit(const ShutdownIntent& intent) {
+bool DshDesktopApp::applyBackendIntent(const ShutdownIntent& intent,
+                                       BackendShutdownOp op,
+                                       const char* logTag) {
+    // 文案按 op 区分，保持原 performQuit / performRestart 的对外可见行为不变。
+    const QString verb = (op == BackendShutdownOp::Stop)
+                             ? QStringLiteral("停止")
+                             : QStringLiteral("重启");
+    const QString notifyOk = (op == BackendShutdownOp::Stop)
+                                 ? tr("后台服务已停止。")
+                                 : tr("后台服务已重启。");
+    const QString warnFail = (op == BackendShutdownOp::Stop)
+                                 ? tr("无法停止后台服务：\n%1")
+                                 : tr("无法重启后台服务：\n%1");
+
     const bool canManage = backendManageable();
-    if (canManage) {
-        if (intent.status.running) {
-            // 后端运行中：勾选 → 停；不勾选 → 不动
-            if (intent.manageBackend) {
-                logger_.log("performQuit: 停止后台服务");
-                if (!backend_->stop()) {
-                    const auto latest = backend_->status();
-                    logger_.log(QStringLiteral("performQuit: stop 失败 detail=%1")
-                                    .arg(latest.detail));
-                    QMessageBox::warning(window_, tr("DSH 后台服务"),
-                                         tr("无法停止后台服务：\n%1").arg(latest.detail));
-                } else {
-                    dsh::util::notify(tr("DSH 后台服务"), tr("后台服务已停止。"));
-                }
-            } else {
-                logger_.log("performQuit: 后端运行中但用户未勾选，保持运行");
-            }
-        } else {
-            // 后端未运行：无论如何都要尝试拉起（用户偏好）
-            logger_.log("performQuit: 后端未运行，按偏好自动拉起");
-            ensureBackendStarted(intent.status);
-        }
+    // 与原 performQuit / performRestart 行为一致：不可管理时完全不进入后台
+    // 动作分支，也不打日志（保留向后兼容的可观测性契约）。
+    if (!canManage) return true;
+    if (!intent.status.running) {
+        // 后端未运行：无论如何都要尝试拉起（用户偏好）。
+        logger_.log(QStringLiteral("%1: 后端未运行，按偏好自动拉起").arg(logTag));
+        ensureBackendStarted(intent.status);
+        return true;
     }
+    if (!intent.manageBackend) {
+        logger_.log(QStringLiteral("%1: 后端运行中但用户未勾选，保持运行").arg(logTag));
+        return true;
+    }
+    // 后端运行中 + 用户勾选：执行 stop / restart。
+    logger_.log(QStringLiteral("%1: %2后台服务").arg(logTag, verb));
+    const bool ok = (op == BackendShutdownOp::Stop)
+                        ? backend_->stop()
+                        : backend_->restart();
+    if (!ok) {
+        const auto latest = backend_->status();
+        logger_.log(QStringLiteral("%1: %2 失败 detail=%3")
+                        .arg(logTag, verb, latest.detail));
+        QMessageBox::warning(window_, tr("DSH 后台服务"), warnFail.arg(latest.detail));
+        return false;
+    }
+    dsh::util::notify(tr("DSH 后台服务"), notifyOk);
+    return true;
+}
+
+void DshDesktopApp::performQuit(const ShutdownIntent& intent) {
+    applyBackendIntent(intent, BackendShutdownOp::Stop, "performQuit");
     if (tray_) tray_->hide();
     if (window_) window_->close();
     if (qtApp_) qtApp_->quit();
@@ -776,31 +829,14 @@ void DshDesktopApp::performQuit(const ShutdownIntent& intent) {
 
 void DshDesktopApp::performRestart(const ShutdownIntent& intent) {
     if (!qtApp_) return;
-    const bool canManage = backendManageable();
-    if (canManage) {
-        if (intent.status.running) {
-            if (intent.manageBackend) {
-                logger_.log("performRestart: 重启后台服务");
-                if (!backend_->restart()) {
-                    const auto latest = backend_->status();
-                    logger_.log(QStringLiteral("performRestart: restart 失败 detail=%1")
-                                    .arg(latest.detail));
-                    QMessageBox::warning(window_, tr("DSH 后台服务"),
-                                         tr("无法重启后台服务：\n%1").arg(latest.detail));
-                } else {
-                    dsh::util::notify(tr("DSH 后台服务"), tr("后台服务已重启。"));
-                }
-            } else {
-                logger_.log("performRestart: 后端运行中但用户未勾选，保持运行");
-            }
-        } else {
-            logger_.log("performRestart: 后端未运行，按偏好自动拉起");
-            ensureBackendStarted(intent.status);
-        }
-    }
+    applyBackendIntent(intent, BackendShutdownOp::Restart, "performRestart");
 
     // 用当前可执行文件 + 原始参数重新拉起；先释放单实例锁，避免新实例把
     // 自己当成"二次启动"而立刻退出。
+    // argv 已由 ``QCommandLineParser`` 在 main.cpp schema 化校验（--theme 限定
+    // dark/light、--url / --log-file 走显式解析）；此处不再解析或拼接 shell
+    // 元字符。Qt6 ``startDetached`` 默认不经过 shell，无命令注入面。
+    // (变更理由: 安全审查 M-1)
     const QString program = QCoreApplication::applicationFilePath();
     QStringList args = qtApp_->arguments();
     if (!args.isEmpty()) args.removeFirst();

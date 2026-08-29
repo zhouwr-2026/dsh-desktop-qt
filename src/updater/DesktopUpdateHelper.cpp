@@ -9,6 +9,8 @@
 
 #include "DesktopUpdateHelper.h"
 
+#include "../util/Sha256.h"
+
 #include <QCryptographicHash>
 #include <QDir>
 #include <QFile>
@@ -136,36 +138,10 @@ bool pathsEqual(const QString& a, const QString& b) {
 }  // namespace
 
 bool computeSha256(const QString& path, QString* outHex, QString* error) {
-    if (path.isEmpty()) {
-        setError(error, QStringLiteral("路径为空"));
-        return false;
-    }
-
-    QFile file(path);
-    if (!file.open(QIODevice::ReadOnly)) {
-        setError(error, QStringLiteral("无法打开文件：%1 (%2)")
-                            .arg(path, file.errorString()));
-        return false;
-    }
-
-    QCryptographicHash hash(QCryptographicHash::Sha256);
-    static constexpr qint64 kChunkSize = 1 << 20;  // 1 MiB
-
-    QByteArray chunk;
-    while (!file.atEnd()) {
-        chunk = file.read(kChunkSize);
-        if (chunk.isEmpty()) {
-            setError(error, QStringLiteral("读取文件失败：%1 (%2)")
-                                .arg(path, file.errorString()));
-            return false;
-        }
-        hash.addData(chunk);
-    }
-
-    if (outHex != nullptr) {
-        *outHex = QString::fromLatin1(hash.result().toHex());
-    }
-    return true;
+    // 薄封装：实际计算下沉到 dsh::util::computeFileSha256，避免与
+    // DesktopReleaseDownloader 出现两套流式 SHA-256 实现。
+    // (变更理由: 结构审查 #2, computeSha256 / computeFileSha256 重复)
+    return dsh::util::computeFileSha256(path, outHex, error);
 }
 
 bool isValidSha256Hex(const QString& hex) {

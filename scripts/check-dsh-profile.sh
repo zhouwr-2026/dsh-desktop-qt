@@ -118,11 +118,19 @@ const profile = JSON.parse(fs.readFileSync(path.join(profileDir, 'package.json')
 const dependencies = Object.keys(profile.dependencies ?? {})
 const failures = []
 
-function collectExportPaths(value, paths = []) {
+// 递归收集 exports 字段里的所有字符串路径。限制深度避免恶意 package.json
+// （如循环引用 / 超深嵌套）触发 Node 栈溢出或 OOM。10 层对正常
+// exports 嵌套（条件导出 + 数组 fallback）足够富余。
+// (变更理由: 安全审查不确定项 - collectExportPaths 递归深度)
+const kCollectExportPathsMaxDepth = 10
+function collectExportPaths(value, paths = [], depth = 0) {
+  if (depth > kCollectExportPathsMaxDepth) return paths
   if (typeof value === 'string') paths.push(value)
-  else if (Array.isArray(value)) value.forEach(item => collectExportPaths(item, paths))
+  else if (Array.isArray(value)) {
+    value.forEach(item => collectExportPaths(item, paths, depth + 1))
+  }
   else if (value && typeof value === 'object') {
-    Object.values(value).forEach(item => collectExportPaths(item, paths))
+    Object.values(value).forEach(item => collectExportPaths(item, paths, depth + 1))
   }
   return paths
 }

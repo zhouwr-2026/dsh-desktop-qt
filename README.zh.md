@@ -180,6 +180,14 @@ ctest --test-dir build/release --output-on-failure
 
 图形模式默认拒绝 root 运行，以避免关闭 Chromium 沙箱。仅在已隔离并明确承担风险的环境中设置 `DSH_DESKTOP_ALLOW_ROOT=1`。
 
+### `DSH_BIN`（仅供开发 / CI 覆盖）
+
+supervised 模式下，桌面端默认从 `PATH` 中查找 `dsh` 二进制。可通过环境变量 `DSH_BIN=<绝对路径>` 覆盖：
+
+- **仅供开发 / CI 使用**：用于指向某个本地构建的 `dsh` 副本，**生产构建请勿设置**；
+- 该路径必须真实存在（`QFile::exists` 校验），但子进程的命令参数（`web --host X --port Y`）是硬编码常量，不会沿该路径执行任意命令；
+- 不构成额外提权面：仍以当前用户身份运行，且无法借此越过单元测试 / 集成测试未覆盖的代码路径。
+
 ## 调试
 
 ```sh
@@ -242,17 +250,20 @@ DSH-Desktop/
 │   ├── icon/                    # IconLoader
 │   ├── theme/                   # ThemeWatcher
 │   ├── updater/                 # Updater + UpdatePlan + 桌面自更新助手
-│   ├── util/                    # Logger / Notify (D-Bus)
+│   ├── util/                    # 纯函数叶子工具：Logger / Notify(DBus)
+│   │                            # / Sha256 / HttpProbe / SyncHttp / RunSyncProcess
 │   └── web/                     # LoopbackWebPage + DownloadInterceptor
 ├── assets/                      # 黑白鲸鱼 SVG（嵌入到二进制）
 │   └── icons.qrc
-├── tests/                       # Qt Test
+├── tests/                       # Qt Test（24 个 ctest 目标，含 shell 测试）
 ├── packaging/                   # PKGBUILD + .desktop + install.sh
+│   └── dsh-theme-export.service # hardening：ProtectSystem / ProtectHome
 ├── scripts/                    # 开发与端到端验证脚本
 │   ├── check-dsh-profile.sh     # DSH profile 只读完整性检查
-│   └── smoke.sh                 # 端到端冒烟
+│   └── smoke.sh                 # 端到端冒烟（build + ctest + smoke + self-test）
 ├── docs/                       # 设计方案与开发文档
-│   └── DSH-DESKTOP-SERVICE-PLAN.zh.md
+│   ├── DSH-DESKTOP-SERVICE-PLAN.zh.md
+│   └── DEPENDENCIES.md          # 依赖清单（Qt/KF6/DSH CLI/libxcb/systemd）
 ├── README.md
 └── README.zh.md
 ```

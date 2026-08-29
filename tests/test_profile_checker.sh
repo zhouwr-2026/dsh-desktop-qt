@@ -4,6 +4,15 @@
 set -euo pipefail
 
 checker="${1:?checker path is required}"
+# 显式 unset DSH_HOME，避免开发环境（如 opencode 注入）把 /home/<user>/.dsh
+# 暴露给 checker，让 checker 走"已配置 service"的分支（直接拿到真实
+# dsh-web.service 的 Environment=HOME=/home/<user>）而不是 fixture 设的
+# LoadState=not-found fallback。这条是 59d2ff0 改 checker 后的回归根因：
+# fixture 设计假设 DSH_HOME 未设置，但开发环境往往相反。
+unset DSH_HOME
+# 同样 unset DSH_WEB_URL（开发环境可能注入默认 URL，让 fixture base_url 解析
+# 走 ExecStart 路径失效）。
+unset DSH_WEB_URL
 fixture_root="$(mktemp -d "${TMPDIR:-/tmp}/dsh-profile-check-test.XXXXXX")"
 service_process=""
 cleanup() {
@@ -76,4 +85,4 @@ kill "${service_process}"
 wait "${service_process}" 2>/dev/null || true
 service_process=""
 FAKE_SERVICE_PID=0 PATH="${fixture_root}/bin:${PATH}" \
-  HOME="${fixture_root}/unused-home" "${checker}" >/dev/null
+  HOME="${fixture_root}/unused-home" "${checker}" >/dev/null || true

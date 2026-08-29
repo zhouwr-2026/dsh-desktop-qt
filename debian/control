@@ -1,0 +1,33 @@
+Source: dsh-desktop
+Section: devel
+Priority: optional
+Maintainer: DSH Desktop 维护团队
+Standards-Version: 4.7.0
+Rules-Requires-Root: no
+Build-Depends:
+ debhelper-compat (= 13),
+ cmake (>= 3.19),
+ ninja-build,
+ pkg-config,
+ libxcb1-dev,
+ qt6-base-dev (>= 6.6),
+ qt6-svg-dev (>= 6.6),
+ qt6-webengine-dev (>= 6.6),
+ qt6-tools-dev,
+ qt6-tools-dev-tools
+Homepage: https://github.com/anywhere-labs/deepseek-harness-desktop
+
+Package: dsh-desktop
+Architecture: any
+Depends:
+ ${shlibs:Depends},
+ ${misc:Depends},
+ policykit-1,
+ procps,
+ npm,
+ systemd
+Recommends:
+ polkit-kde-agent-1
+Description: DeepSeek Harness 原生 Linux 桌面包装器
+ DSH Desktop 使用 Qt 6 WebEngine 嵌入 DeepSeek Harness Web 界面，
+ 提供系统托盘、原生对话框、主题图标、更新与安全的 systemd 服务管理。

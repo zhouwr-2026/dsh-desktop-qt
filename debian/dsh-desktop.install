@@ -1,0 +1,11 @@
+debian/tmp/usr/bin/dsh-desktop usr/bin
+debian/tmp/usr/bin/dsh-desktop-updater usr/bin
+debian/tmp/usr/bin/dsh-desktop-uninstaller usr/bin
+debian/tmp/usr/bin/dsh-profile-check usr/bin
+packaging/dsh-theme-export.service lib/systemd/system
+packaging/dsh-theme-export.path lib/systemd/system
+packaging/dsh-desktop.desktop etc/xdg/autostart
+debian/tmp/usr/share/icons usr/share
+debian/tmp/usr/share/applications usr/share
+debian/tmp/usr/share/licenses usr/share
+debian/tmp/usr/lib/dsh-desktop usr/lib

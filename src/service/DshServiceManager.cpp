@@ -2,16 +2,43 @@
 // @author zhouwr
 
 #include "DshServiceManager.h"
+#include "ShowFailure.h"
+#include "SystemctlCommandBuilder.h"
 #include "SystemctlShowParser.h"
 
 #include <QDir>
 #include <QElapsedTimer>
+#include <QProcess>
 #include <QStandardPaths>
 #include <QTimer>
 
 #include <unistd.h>
 
 namespace dsh::service {
+
+namespace {
+
+// ``ProcessOutcome`` / DshServiceManager 私有成员用独立 enum，避免在
+// ``DshServiceManager.h`` 暴露 ``<QProcess>`` 头。此函数在内部把 Qt 的
+// ``QProcess::ExitStatus`` / ``QProcess::ProcessError`` 映射为自定义 enum。
+ProcessExitStatus fromQProcessExitStatus(QProcess::ExitStatus s) {
+    return (s == QProcess::NormalExit) ? ProcessExitStatus::Normal
+                                       : ProcessExitStatus::Crashed;
+}
+
+ProcessErrorCode fromQProcessError(QProcess::ProcessError e) {
+    switch (e) {
+        case QProcess::FailedToStart:  return ProcessErrorCode::FailedToStart;
+        case QProcess::Crashed:        return ProcessErrorCode::Crashed;
+        case QProcess::Timedout:       return ProcessErrorCode::Timedout;
+        case QProcess::WriteError:     return ProcessErrorCode::WriteError;
+        case QProcess::ReadError:      return ProcessErrorCode::ReadError;
+        case QProcess::UnknownError:   return ProcessErrorCode::Unknown;
+    }
+    return ProcessErrorCode::Unknown;
+}
+
+}  // namespace
 
 namespace {
 
@@ -26,23 +53,8 @@ QString currentSystemUser() {
     return QDir::home().dirName();
 }
 
-/// 扫描 stderr，判定 systemd 是否因单元缺失或总线不可用而失败。
-void classifyShowFailure(const QString& stderrText, const QString& unitName,
-                         QString* reason, QString* detail) {
-    const QString err = stderrText.trimmed();
-    const bool notFound = err.contains(QLatin1String("could not be found"))
-        || err.contains(QLatin1String("No such file or directory"));
-    const bool busDown = err.contains(QLatin1String("bus"), Qt::CaseInsensitive)
-        || err.contains(QLatin1String("connect"), Qt::CaseInsensitive);
-    if (notFound) {
-        if (reason) *reason = unitName + QStringLiteral(" 在该范围未发现");
-    } else if (busDown) {
-        if (reason) *reason = QStringLiteral("systemd 总线不可用");
-    } else {
-        if (reason) *reason = QStringLiteral("systemctl show 失败");
-    }
-    if (detail) *detail = err.isEmpty() ? *reason : err;
-}
+// systemctl show 失败分类已下沉到 ``dsh::service::classifyShowFailure``
+// （ShowFailure.{h,cpp}），ServiceDiscovery 与本类共用同一份实现。
 
 }  // namespace
 
@@ -80,7 +92,7 @@ DshServiceManager::~DshServiceManager() {
 
 bool DshServiceManager::setUnit(const QString& unitName, ServiceScope scope) {
     QString error;
-    if (!isValidUnitName(unitName, &error)) {
+    if (!SystemctlCommandBuilder::isValidUnitName(unitName, &error)) {
         hasTarget_ = false;
         return false;
     }
@@ -128,7 +140,7 @@ qint64 DshServiceManager::requestDiscovery() {
     discoverySystemctlAvailable_ = true;
 
     beginOperation(ServiceOperation::Discovery);
-    startProcess(exe, systemctlArguments(ServiceOperation::Discovery,
+    startProcess(exe, SystemctlCommandBuilder::systemctlArguments(ServiceOperation::Discovery,
                                          ServiceScope::System, currentUnit()));
     return currentRequestId_;
 }
@@ -147,7 +159,7 @@ qint64 DshServiceManager::requestStatus() {
         return -1;
     }
     QString error;
-    if (!isValidUnitName(unitName_, &error)) {
+    if (!SystemctlCommandBuilder::isValidUnitName(unitName_, &error)) {
         rejectOperation(ServiceOperation::Status, ServiceResult::InvalidUnit,
                         ServiceError::UnitNameInvalid, error);
         return -1;
@@ -160,7 +172,7 @@ qint64 DshServiceManager::requestStatus() {
         return -1;
     }
     const ResolvedCommand cmd =
-        resolveCommand(ServiceOperation::Status, scope_, unitName_, exe,
+        SystemctlCommandBuilder::resolveCommand(ServiceOperation::Status, scope_, unitName_, exe,
                        resolvePkexec(), static_cast<qint64>(::geteuid()));
     return launchOneShot(ServiceOperation::Status, cmd.program, cmd.arguments);
 }
@@ -193,7 +205,7 @@ qint64 DshServiceManager::daemonReload() {
     }
     // daemon-reload 无 unit 参数；只携带当前目标 scope（缺省用户级）。
     const ResolvedCommand cmd =
-        resolveCommand(ServiceOperation::DaemonReload, scope_, QString(), exe,
+        SystemctlCommandBuilder::resolveCommand(ServiceOperation::DaemonReload, scope_, QString(), exe,
                        resolvePkexec(), static_cast<qint64>(::geteuid()));
     return launchOneShot(ServiceOperation::DaemonReload, cmd.program, cmd.arguments);
 }
@@ -212,7 +224,7 @@ qint64 DshServiceManager::enable() {
         return -1;
     }
     QString error;
-    if (!isValidUnitName(unitName_, &error)) {
+    if (!SystemctlCommandBuilder::isValidUnitName(unitName_, &error)) {
         rejectOperation(ServiceOperation::Enable, ServiceResult::InvalidUnit,
                         ServiceError::UnitNameInvalid, error);
         return -1;
@@ -225,7 +237,7 @@ qint64 DshServiceManager::enable() {
         return -1;
     }
     const ResolvedCommand cmd =
-        resolveCommand(ServiceOperation::Enable, scope_, unitName_, exe,
+        SystemctlCommandBuilder::resolveCommand(ServiceOperation::Enable, scope_, unitName_, exe,
                        resolvePkexec(), static_cast<qint64>(::geteuid()));
     return launchOneShot(ServiceOperation::Enable, cmd.program, cmd.arguments);
 }
@@ -239,7 +251,7 @@ qint64 DshServiceManager::startJournalTail(int lines) {
     }
     if (hasTarget_) {
         QString unitError;
-        if (!isValidUnitName(unitName_, &unitError)) {
+        if (!SystemctlCommandBuilder::isValidUnitName(unitName_, &unitError)) {
             rejectOperation(ServiceOperation::JournalTail, ServiceResult::InvalidUnit,
                             ServiceError::UnitNameInvalid, unitError);
             return -1;
@@ -253,7 +265,7 @@ qint64 DshServiceManager::startJournalTail(int lines) {
         return -1;
     }
     beginOperation(ServiceOperation::JournalTail);
-    startProcess(exe, journalctlArguments(scope_, currentUnit(), lines, /*follow=*/true));
+    startProcess(exe, SystemctlCommandBuilder::journalctlArguments(scope_, currentUnit(), lines, /*follow=*/true));
     return currentRequestId_;
 }
 
@@ -292,7 +304,7 @@ qint64 DshServiceManager::launchMutate(ServiceOperation operation) {
         return -1;
     }
     QString error;
-    if (!isValidUnitName(unitName_, &error)) {
+    if (!SystemctlCommandBuilder::isValidUnitName(unitName_, &error)) {
         rejectOperation(operation, ServiceResult::InvalidUnit,
                         ServiceError::UnitNameInvalid, error);
         return -1;
@@ -314,7 +326,7 @@ qint64 DshServiceManager::launchMutate(ServiceOperation operation) {
         return -1;
     }
     const ResolvedCommand cmd =
-        resolveCommand(operation, scope_, unitName_, exe, resolvePkexec(),
+        SystemctlCommandBuilder::resolveCommand(operation, scope_, unitName_, exe, resolvePkexec(),
                        static_cast<qint64>(::geteuid()));
     return launchOneShot(operation, cmd.program, cmd.arguments);
 }
@@ -367,8 +379,8 @@ void DshServiceManager::startProcess(const QString& program,
     finalized_ = false;
     processStarted_ = false;
     lastExitCode_ = 0;
-    lastExitStatus_ = QProcess::NormalExit;
-    lastProcessError_ = QProcess::UnknownError;
+    lastExitStatus_ = ProcessExitStatus::Normal;
+    lastProcessError_ = ProcessErrorCode::Unknown;
     stdoutBuffer_.clear();
     stderrBuffer_.clear();
     journalLineBuffer_.clear();
@@ -410,14 +422,14 @@ void DshServiceManager::startProcess(const QString& program,
     connect(p, &QProcess::finished, this, [this, p](int code, QProcess::ExitStatus st) {
         if (p != process_ || finalized_) return;
         lastExitCode_ = code;
-        lastExitStatus_ = st;
+        lastExitStatus_ = fromQProcessExitStatus(st);
         processStarted_ = true;
         onProcessFinished(true);
     });
 
     connect(p, &QProcess::errorOccurred, this, [this, p](QProcess::ProcessError e) {
         if (p != process_ || finalized_) return;
-        lastProcessError_ = e;
+        lastProcessError_ = fromQProcessError(e);
         if (e == QProcess::FailedToStart) {
             processStarted_ = false;
             onProcessFinished(false);
@@ -517,19 +529,11 @@ void DshServiceManager::handleDiscoveryFinished(bool started, int exitCode) {
         } else if (timedOut_) {
             candidate.rejection = RejectionReason::Timeout;
         } else {
-            QString reason;
+            RejectionReason reason = RejectionReason::None;
             QString detail;
-            classifyShowFailure(stderrBuffer_, unit, &reason, &detail);
-            if (detail.contains(QLatin1String("could not be found"))
-                || detail.contains(QLatin1String("No such file or directory"))) {
-                candidate.rejection = RejectionReason::UnitNotFound;
-            } else if (detail.contains(QLatin1String("bus"), Qt::CaseInsensitive)
-                       || detail.contains(QLatin1String("connect"), Qt::CaseInsensitive)) {
-                candidate.rejection = RejectionReason::BusUnavailable;
-            } else {
-                candidate.rejection = RejectionReason::ShowFailed;
-            }
-            candidate.rejectionDetail = detail.isEmpty() ? reason : detail;
+            classifyShowFailure(stderrBuffer_, unit, reason, detail);
+            candidate.rejection = reason;
+            candidate.rejectionDetail = detail;
         }
         if (candidate.rejectionDetail.isEmpty()) {
             candidate.rejectionDetail = stderrBuffer_.trimmed();
@@ -552,7 +556,7 @@ void DshServiceManager::handleDiscoveryFinished(bool started, int exitCode) {
             finalizeDiscovery();
             return;
         }
-        startProcess(exe, systemctlArguments(ServiceOperation::Discovery,
+        startProcess(exe, SystemctlCommandBuilder::systemctlArguments(ServiceOperation::Discovery,
                                              ServiceScope::User, unit));
         return;
     }
@@ -710,136 +714,18 @@ ServiceStatus DshServiceManager::toServiceStatus(const ServiceInfo& info) const 
 }
 
 // ---------------------------------------------------------------------------
-// 纯命令参数构建与结果映射
+// 进程结果映射
+//
+// 纯命令构造已迁移到 SystemctlCommandBuilder（unit 名校验 / systemctl+
+// journalctl argv 构造 / pkexec 包裹），见 service/SystemctlCommandBuilder.h。
+// 这里只保留与 ProcessOutcome / ServiceInfo 强绑定的三个映射函数。
 // ---------------------------------------------------------------------------
-
-QStringList DshServiceManager::systemctlArguments(ServiceOperation operation,
-                                                  ServiceScope scope,
-                                                  const QString& unitName) {
-    QStringList args;
-    if (scope == ServiceScope::User) args << QStringLiteral("--user");
-    args << QStringLiteral("--no-pager");
-    switch (operation) {
-        case ServiceOperation::Start:
-            args << QStringLiteral("start");
-            break;
-        case ServiceOperation::Stop:
-            args << QStringLiteral("stop");
-            break;
-        case ServiceOperation::Restart:
-            args << QStringLiteral("restart");
-            break;
-        case ServiceOperation::Status:
-        case ServiceOperation::Discovery:
-            args << QStringLiteral("show");
-            break;
-        case ServiceOperation::DaemonReload:
-            args << QStringLiteral("daemon-reload");
-            break;
-        case ServiceOperation::Enable:
-            args << QStringLiteral("enable");
-            break;
-        case ServiceOperation::JournalTail:
-            // journalctl 另行构造。
-            break;
-    }
-    // daemon-reload 只刷新配置，不带 unit 名；其余命令把 unit 名作为尾部参数。
-    if (operation != ServiceOperation::DaemonReload) {
-        args << unitName;
-    }
-    return args;
-}
-
-bool DshServiceManager::operationNeedsElevation(ServiceOperation operation,
-                                                ServiceScope scope,
-                                                qint64 euid) {
-    if (scope != ServiceScope::System) return false;
-    switch (operation) {
-        case ServiceOperation::Start:
-        case ServiceOperation::Stop:
-        case ServiceOperation::Restart:
-        case ServiceOperation::DaemonReload:
-        case ServiceOperation::Enable:
-            return euid != 0;
-        default:
-            return false;
-    }
-}
-
-ResolvedCommand DshServiceManager::resolveCommand(ServiceOperation operation,
-                                                  ServiceScope scope,
-                                                  const QString& unitName,
-                                                  const QString& systemctlExe,
-                                                  const QString& pkexecExe,
-                                                  qint64 euid) {
-    ResolvedCommand cmd;
-    const QStringList sysArgs = systemctlArguments(operation, scope, unitName);
-    if (operationNeedsElevation(operation, scope, euid) && !pkexecExe.isEmpty()) {
-        cmd.program = pkexecExe;
-        cmd.arguments = {QStringLiteral("--disable-internal-agent"), systemctlExe};
-        cmd.arguments.append(sysArgs);
-    } else {
-        cmd.program = systemctlExe;
-        cmd.arguments = sysArgs;
-    }
-    return cmd;
-}
-
-QStringList DshServiceManager::journalctlArguments(ServiceScope scope,
-                                                   const QString& unitName,
-                                                   int lines,
-                                                   bool follow) {
-    QStringList args;
-    if (scope == ServiceScope::User) args << QStringLiteral("--user");
-    args << QStringLiteral("--no-pager");
-    if (lines > 0) args << QStringLiteral("-n") << QString::number(lines);
-    args << QStringLiteral("-u") << unitName;
-    if (follow) args << QStringLiteral("-f");
-    return args;
-}
-
-bool DshServiceManager::isValidUnitName(const QString& unitName, QString* error) {
-    auto fail = [&error](const QString& message) {
-        if (error) *error = message;
-        return false;
-    };
-    if (unitName.isEmpty()) return fail(QStringLiteral("unit 名不能为空"));
-    if (unitName.size() > 255) return fail(QStringLiteral("unit 名过长"));
-    if (unitName.contains(QLatin1Char('/')))
-        return fail(QStringLiteral("unit 名不能包含路径分隔符 '/'"));
-    if (unitName.startsWith(QLatin1Char('.')))
-        return fail(QStringLiteral("unit 名不能以 '.' 开头"));
-
-    for (const QChar c : unitName) {
-        const ushort u = c.unicode();
-        if (u == 0 || c.isSpace() || u == '"' || u == '\'' || u == '\\' || u == '`'
-            || u == ';' || u == '&' || u == '|' || u == '$' || u == '(' || u == ')'
-            || u < 0x20) {
-            return fail(QStringLiteral("unit 名包含非法字符"));
-        }
-    }
-
-    static const QStringList kSuffixes = {
-        QStringLiteral(".service"), QStringLiteral(".socket"), QStringLiteral(".target"),
-        QStringLiteral(".timer"),   QStringLiteral(".path"),   QStringLiteral(".mount"),
-        QStringLiteral(".automount"), QStringLiteral(".slice"), QStringLiteral(".scope"),
-    };
-    bool okSuffix = false;
-    for (const QString& suffix : kSuffixes) {
-        if (unitName.endsWith(suffix)) {
-            okSuffix = true;
-            break;
-        }
-    }
-    if (!okSuffix) return fail(QStringLiteral("unit 名必须以已知 systemd 单元后缀结尾"));
-    return true;
-}
 
 ServiceResult DshServiceManager::mapProcessResult(const ProcessOutcome& outcome) {
     if (outcome.timedOut) return ServiceResult::Timeout;
     if (outcome.cancelled) return ServiceResult::Cancelled;
     if (!outcome.started) return ServiceResult::Failed;
-    if (outcome.exitStatus != QProcess::NormalExit) return ServiceResult::Failed;
+    if (outcome.exitStatus != ProcessExitStatus::Normal) return ServiceResult::Failed;
     if (outcome.exitCode != 0) return ServiceResult::Failed;
     return ServiceResult::Success;
 }
@@ -848,7 +734,7 @@ ServiceError DshServiceManager::mapProcessError(const ProcessOutcome& outcome) {
     if (outcome.timedOut) return ServiceError::ProcessTimedOut;
     if (outcome.cancelled) return ServiceError::Cancelled;
     if (!outcome.started) return ServiceError::ProcessStartFailed;
-    if (outcome.exitStatus != QProcess::NormalExit) return ServiceError::NonZeroExit;
+    if (outcome.exitStatus != ProcessExitStatus::Normal) return ServiceError::NonZeroExit;
     if (outcome.exitCode != 0) return ServiceError::NonZeroExit;
     return ServiceError::None;
 }

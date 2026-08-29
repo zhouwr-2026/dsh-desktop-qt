@@ -3,6 +3,7 @@
 #include "Backend.h"
 #include "SupervisedBackend.h"
 #include "SystemdBackend.h"
+#include "../util/HttpProbe.h"
 
 #include <QDir>
 #include <QProcess>
@@ -21,18 +22,9 @@ bool isLoopbackUrl(const QString& rawUrl) {
         || host == QStringLiteral("::1");
 }
 
-bool httpProbe(const QString& url) {
-    QProcess curl;
-    curl.start(QStringLiteral("curl"),
-               {QStringLiteral("-s"), QStringLiteral("-o"), QStringLiteral("/dev/null"),
-                QStringLiteral("-w"), QStringLiteral("%{http_code}"),
-                QStringLiteral("--max-time"), QStringLiteral("1"),
-                url + QStringLiteral("/")});
-    if (!curl.waitForFinished(1500)) return false;
-    bool ok = false;
-    const int code = QString::fromLocal8Bit(curl.readAllStandardOutput()).toInt(&ok);
-    return ok && code >= 200 && code < 500;
-}
+// HTTP 健康探测已下沉到 ``dsh::util::httpProbe``（util/HttpProbe.{h,cpp}）。
+// 之前三处 Backend 各自有一份私有实现，且 SystemdBackend 版多了
+// ``exitStatus != NormalExit`` 硬化；统一使用 Systemd 版的安全语义。
 
 class ExternalBackend final : public Backend {
 public:
@@ -41,7 +33,7 @@ public:
 
     Mode mode() const override { return Mode::External; }
     QString url() const override { return url_; }
-    bool isRunning() const override { return httpProbe(url_); }
+    bool isRunning() const override { return dsh::util::httpProbe(url_); }
     Status status() override {
         Status result;
         result.running = isRunning();

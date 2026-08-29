@@ -1,5 +1,13 @@
 // SPDX-License-Identifier: MIT
 // @author zhouwr
+//
+// LoopbackWebPage — 对内嵌 DSH Web UI 强化 Chromium 弹窗默认行为。
+//
+// 对所有内嵌页面 JS confirm / prompt 一律自动拒绝，alert 静默吞掉（不弹
+// 任何原生模态）；这是 ``isSameOrigin`` + 仅允许 ``http(s)://loopback`` 内嵌
+// 页面策略的安全默认，避免破坏性操作（如删除会话）被静默放行。
+// ``acceptNavigationRequest`` 同样拒绝非 loopback 的导航请求。
+// (变更理由: 安全审查 L-6)
 #include "LoopbackWebPage.h"
 
 #include <QWebEngineNewWindowRequest>

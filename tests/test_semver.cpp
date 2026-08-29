@@ -9,6 +9,8 @@
 #include "../src/updater/Updater.h"
 
 using dsh::updater::compareVersions;
+using dsh::updater::checkMinimumDshVersion;
+using dsh::updater::MinimumVersionCheck;
 
 class TestSemver : public QObject {
     Q_OBJECT
@@ -21,6 +23,10 @@ private slots:
     void numericVsAlphabetic();
     void rejectsInvalidSemVer();
     void comparesLargeNumericIdentifiers();
+    void minimumDshVersionAtBoundary();
+    void minimumDshVersionBelowThreshold();
+    void minimumDshVersionEmpty();
+    void minimumDshVersionInvalid();
 };
 
 void TestSemver::parseStableBeatsRc() {
@@ -72,6 +78,43 @@ void TestSemver::comparesLargeNumericIdentifiers() {
                             "999999999999999999998.0.0") > 0);
     QVERIFY(compareVersions("1.0.0-alpha.999999999999999999999",
                             "1.0.0-alpha.2") > 0);
+}
+
+void TestSemver::minimumDshVersionAtBoundary() {
+    // 恰好等于最低版本：放行
+    QCOMPARE(checkMinimumDshVersion(QString::fromLatin1(
+                 dsh::updater::kMinimumDshVersion)),
+             MinimumVersionCheck::Ok);
+    // 稳定版高于最低版本：放行
+    QCOMPARE(checkMinimumDshVersion(QStringLiteral("0.1.0")),
+             MinimumVersionCheck::Ok);
+    QCOMPARE(checkMinimumDshVersion(QStringLiteral("1.2.3")),
+             MinimumVersionCheck::Ok);
+}
+
+void TestSemver::minimumDshVersionBelowThreshold() {
+    // 低于 rc.7 的预发布版：拒绝
+    QCOMPARE(checkMinimumDshVersion(QStringLiteral("0.1.0-rc.6")),
+             MinimumVersionCheck::TooOld);
+    QCOMPARE(checkMinimumDshVersion(QStringLiteral("0.1.0-rc.1")),
+             MinimumVersionCheck::TooOld);
+    QCOMPARE(checkMinimumDshVersion(QStringLiteral("0.0.99")),
+             MinimumVersionCheck::TooOld);
+}
+
+void TestSemver::minimumDshVersionEmpty() {
+    // 探测不到版本（dsh 不在 PATH / 无 package.json）：Unknown，不阻塞
+    QCOMPARE(checkMinimumDshVersion(QString()),
+             MinimumVersionCheck::Unknown);
+}
+
+void TestSemver::minimumDshVersionInvalid() {
+    // package.json 损毁 / dsh --version 输出非 SemVer：Invalid，调用方按
+    // Unknown 处理（仅记录日志、不阻塞启动）。
+    QCOMPARE(checkMinimumDshVersion(QStringLiteral("not-a-version")),
+             MinimumVersionCheck::Invalid);
+    QCOMPARE(checkMinimumDshVersion(QStringLiteral("01.0.0")),  // 前导零非法
+             MinimumVersionCheck::Invalid);
 }
 
 QTEST_GUILESS_MAIN(TestSemver)

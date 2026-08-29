@@ -12,6 +12,7 @@
 
 QT_BEGIN_NAMESPACE
 class QApplication;
+class QDialog;
 class QEventLoop;
 class QLocalServer;
 class QNetworkAccessManager;
@@ -19,13 +20,22 @@ class QNetworkReply;
 QT_END_NAMESPACE
 
 #include "../backend/Backend.h"
-#include "../theme/ThemeWatcher.h"
-#include "../updater/UpdatePlan.h"
 #include "../util/Logger.h"
-#include "AboutDialog.h"
-#include "DshWindow.h"
-#include "LogViewer.h"
-#include "TrayController.h"
+
+// 仅用于函数签名引用参数；完整定义在 DshDesktopApp.cpp 中通过 UpdatePlan.h 拉入。
+namespace dsh::updater { struct UpdatePlan; }
+
+namespace dsh::app {
+
+// 前向声明：以下类仅作为指针 / QPointer / 引用参数出现在本头，无需完整定义。
+// 完整定义在 DshDesktopApp.cpp 中通过对应头拉入。
+class AboutDialog;
+class DshWindow;
+class LogViewer;
+class TrayController;
+}  // namespace dsh::app
+
+namespace dsh::theme { class ThemeWatcher; }
 
 namespace dsh::app {
 
@@ -85,6 +95,24 @@ private:
     void onThemeChanged(const QString& scheme);
     void pollBackendHealth();
     void applyLogoTheme(const QString& scheme);
+
+    /// ``applyBackendIntent`` 的具体动作：stop 还是 restart。
+    /// notify / 警告标题里的"停止"/"重启"文案按 ``op`` 区分。
+    /// (变更理由: 结构审查 #5, performQuit/performRestart 镜像)
+    enum class BackendShutdownOp {
+        Stop,
+        Restart,
+    };
+
+    /// 把 ``ShutdownIntent`` 翻译为对后端的具体动作并执行（stop / restart /
+    /// no-op / ensureBackendStarted），按结果记录日志、弹通知/警告。
+    /// 不管理 UI 收尾（隐藏托盘 / 关闭窗口 / 退出主循环），由调用方负责。
+    /// \param logTag 日志前缀（如 ``"performQuit"``），用于在日志里区分调用方；
+    ///               不影响通知/警告文案，文案由 ``op`` 决定。
+    /// \return true 表示成功执行了用户意图；false 表示后端操作失败
+    ///         （调用方应继续退出流程，不应阻塞 UI 收尾）。
+    bool applyBackendIntent(const ShutdownIntent& intent, BackendShutdownOp op,
+                            const char* logTag);
 
     /// 按 ``ShutdownIntent`` 决定对后台服务做什么，再执行桌面端退出。
     /// ``backendAction`` 在调用前完成；动作即使失败也不会阻塞桌面端退出。

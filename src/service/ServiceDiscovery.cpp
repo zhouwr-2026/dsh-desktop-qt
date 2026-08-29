@@ -3,9 +3,10 @@
 
 #include "ServiceDiscovery.h"
 
+#include "ShowFailure.h"
 #include "SystemctlShowParser.h"
+#include "../util/RunSyncProcess.h"
 
-#include <QProcess>
 #include <QStandardPaths>
 
 namespace dsh::service {
@@ -33,41 +34,28 @@ QString runSystemctlShow(ServiceScope scope, const QString& unitName,
     if (scope == ServiceScope::User) args << QStringLiteral("--user");
     args << QStringLiteral("--no-pager") << QStringLiteral("show") << unitName;
 
-    QProcess p;
-    p.start(exe, args);
-    if (!p.waitForStarted(2000)) {
+    // 统一通过 runSyncProcess：超时自动 kill，避免旧版"waitForStarted +
+    // waitForFinished + kill + waitForFinished"样板。
+    const auto probe = dsh::util::runSyncProcess(
+        exe, args, kSystemctlShowTimeoutMs, /*killGraceMs=*/500);
+    if (!probe.startedOk) {
         ok = false;
         reason = RejectionReason::ProcessError;
         detail = QStringLiteral("无法启动 systemctl 进程");
         return {};
     }
-    if (!p.waitForFinished(kSystemctlShowTimeoutMs)) {
-        p.kill();
-        p.waitForFinished(500);
+    if (!probe.finishedOk) {
         ok = false;
         reason = RejectionReason::Timeout;
         detail = QStringLiteral("systemctl show 超时");
         return {};
     }
 
-    const QString out = QString::fromLocal8Bit(p.readAllStandardOutput());
-    if (p.exitStatus() != QProcess::NormalExit || p.exitCode() != 0) {
+    const QString out = QString::fromLocal8Bit(probe.stdoutBytes);
+    if (probe.crashed || probe.exitCode != 0) {
         ok = false;
-        const QString err = QString::fromLocal8Bit(p.readAllStandardError()).trimmed();
-        const bool notFound = err.contains(QLatin1String("could not be found"))
-            || err.contains(QLatin1String("No such file or directory"));
-        const bool busDown = err.contains(QLatin1String("bus"), Qt::CaseInsensitive)
-            || err.contains(QLatin1String("connect"), Qt::CaseInsensitive);
-        if (notFound) {
-            reason = RejectionReason::UnitNotFound;
-            detail = unitName + QStringLiteral(" 在该范围未发现");
-        } else if (busDown) {
-            reason = RejectionReason::BusUnavailable;
-            detail = err.isEmpty() ? QStringLiteral("systemd 总线不可用") : err;
-        } else {
-            reason = RejectionReason::ShowFailed;
-            detail = err.isEmpty() ? QStringLiteral("systemctl show 失败") : err;
-        }
+        const QString err = QString::fromLocal8Bit(probe.stderrBytes).trimmed();
+        classifyShowFailure(err, unitName, reason, detail);
         return {};
     }
     ok = true;

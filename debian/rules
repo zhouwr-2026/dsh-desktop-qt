@@ -1,0 +1,41 @@
+#!/usr/bin/make -f
+#
+# DSH Desktop Debian 打包规则。
+#
+# 由 packaging/debian/control 与 packaging/debian/copyright 描述元数据。
+# 主题导出 unit 与桌面自启动条目通过 debian/dsh-desktop.dirs 与
+# debian/dsh-desktop.install 复制到 /usr/lib/systemd/system 与
+# /etc/xdg/autostart。
+
+%:
+	dh $@
+
+override_dh_auto_configure:
+	cmake --preset release
+
+override_dh_auto_build:
+	cmake --build build/release --parallel
+
+override_dh_auto_test:
+	ctest --test-dir build/release --output-on-failure
+
+override_dh_auto_install:
+	DESTDIR=$(CURDIR)/debian/dsh-desktop cmake --install build/release
+
+# 复制绝对系统路径（systemd unit 与 autostart）。这些文件不进 CMake install，
+# 以免普通用户跑 cpack 时因权限失败。
+override_dh_install:
+	dh_install
+	mkdir -p debian/dsh-desktop/lib/systemd/system
+	mkdir -p debian/dsh-desktop/etc/xdg/autostart
+	cp packaging/dsh-theme-export.service \
+	   debian/dsh-desktop/lib/systemd/system/
+	cp packaging/dsh-theme-export.path \
+	   debian/dsh-desktop/lib/systemd/system/
+	cp packaging/dsh-desktop.desktop \
+	   debian/dsh-desktop/etc/xdg/autostart/
+
+# 卸载前停用 unit。
+override_dh_prerm:
+	dh_prerm
+	deb-systemd-invoke stop dsh-theme-export.path || true
