@@ -107,6 +107,19 @@ install_icons() {
   install -Dm644 "$ROOT/assets/dsh-whale-black.svg" "$icon_dir/dsh-whale-black.svg"
   install -Dm644 "$ROOT/assets/dsh-whale-white.svg" "$icon_dir/dsh-whale-white.svg"
 
+  # 派生 KDE symbolic SVG：把黑色版本的 fill 替换为 currentColor，命名带 -symbolic 后缀。
+  # Plasma 启动器 / 任务栏（KIconThemes）会优先用 <name>-symbolic.svg 并用当前 colorscheme
+  # 的前景色自动渲染——暗色 look-and-feel 下变白、亮色下变黑，与 Plasma 配色实时同步。
+  # 关键场景：Manjaro Breath Dark 等暗色 look-and-feel 把图标主题设为 breeze 而非
+  # breeze-dark 时，启动器只看 breeze/apps/<size>/dsh-whale.svg 固定黑色，没有
+  # symbolic 版本就跟随不了 colorscheme——这是当前最常见的"暗色主题下鲸鱼仍是黑色"
+  # 的根因。symbolic 版保留原固定色版作 fallback，老 KDE / 非 Plasma 桌面仍可用。
+  local symbolic_svg
+  symbolic_svg="$(mktemp --suffix=.svg)"
+  sed 's/fill="#000000"/fill="currentColor"/g' \
+    "$ROOT/assets/dsh-whale-black.svg" > "$symbolic_svg"
+  install -Dm644 "$symbolic_svg" "$icon_dir/dsh-whale-symbolic.svg"
+
   # KWin/Plasma 使用 .desktop 的 dsh-whale 名称：Breeze 下映射黑鲸鱼，
   # Breeze Dark 下映射白鲸鱼。两套主题使用同一名称才能动态切换。
   for size in 16 22 24 32 48 64; do
@@ -114,7 +127,15 @@ install_icons() {
       "/usr/share/icons/breeze/apps/$size/dsh-whale.svg"
     install -Dm644 "$ROOT/assets/dsh-whale-white.svg" \
       "/usr/share/icons/breeze-dark/apps/$size/dsh-whale.svg"
+    # 同步装 symbolic 版到两个主题：当前 colorscheme 决定最终渲染色，
+    # 主题色硬编码版仅作老版本 KDE / 非 Plasma 桌面 fallback。
+    install -Dm644 "$symbolic_svg" \
+      "/usr/share/icons/breeze/apps/$size/dsh-whale-symbolic.svg"
+    install -Dm644 "$symbolic_svg" \
+      "/usr/share/icons/breeze-dark/apps/$size/dsh-whale-symbolic.svg"
   done
+
+  rm -f "$symbolic_svg"
 
   if command -v gtk-update-icon-cache >/dev/null 2>&1; then
     gtk-update-icon-cache -f /usr/share/icons/hicolor 2>/dev/null || true
