@@ -268,6 +268,32 @@ DSH-Desktop/
 └── README.zh.md
 ```
 
+
+## 致谢
+
+### 上游项目
+- **[deepseek-ai/deepseek-harness](https://github.com/deepseek-ai/deepseek-harness)** — 官方 DeepSeek Harness 后端和 CLI 工具，提供我们包装的 Web 服务。采用 Apache-2.0 许可。
+- **[anywhere-labs/deepseek-harness-desktop](https://github.com/anywhere-labs/deepseek-harness-desktop)** — 参考实现的 Electron 桌面包装器（Windows/macOS）。本项目在其概念基础上，使用 Qt 6 为 Linux 原生重实现。
+
+### 依赖组件
+- **[Qt 6](https://www.qt.io/)** — 跨平台应用框架。采用 GPL-3.0 / Commercial 许可。
+- **[systemd](https://systemd.io/)** — 系统和服务管理器。采用 LGPL-2.1+ 许可。
+- **[polkit](https://www.freedesktop.org/wiki/Software/polkit/)** — 策略框架，用于管理系统级权限。采用 LGPL-2.1+ 许可。
+- **[libxcb](https://xcb.freedesktop.org/)** — X11 协议的 C 语言绑定。采用 MIT 许可。
+
+### 开源许可说明
+本项目采用 MIT 许可证，详见 [LICENSE](LICENSE)。
+
+第三方组件许可：
+- Qt 6 组件: LGPL-3.0 或 Commercial
+- systemd: LGPL-2.1+
+- polkit: LGPL-2.1+
+- libxcb: MIT
+
+完整依赖树见 [docs/DEPENDENCIES.md](docs/DEPENDENCIES.md)。
+
+---
+
 ## 许可
 
 MIT
