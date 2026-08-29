@@ -8,4 +8,5 @@ packaging/dsh-desktop.desktop etc/xdg/autostart
 debian/tmp/usr/share/icons usr/share
 debian/tmp/usr/share/applications usr/share
 debian/tmp/usr/share/licenses usr/share
-debian/tmp/usr/lib/dsh-desktop usr/lib
+debian/tmp/usr/lib/*/dsh-desktop/dsh-theme-export usr/lib/dsh-desktop
+debian/tmp/usr/lib/*/dsh-desktop/icon-brightness.sh usr/lib/dsh-desktop

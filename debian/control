@@ -22,7 +22,7 @@ Architecture: any
 Depends:
  ${shlibs:Depends},
  ${misc:Depends},
- policykit-1,
+ polkitd,
  procps,
  npm,
  systemd
