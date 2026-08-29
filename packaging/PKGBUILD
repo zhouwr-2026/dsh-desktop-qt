@@ -58,3 +58,29 @@ package() {
         "$pkgdir/etc/xdg/autostart/dsh-desktop.desktop"
     install -Dm644 LICENSE "$pkgdir/usr/share/licenses/$pkgname/LICENSE"
 }
+
+# 共享给所有发行版包的图标配色探测脚本（packaging/icon-brightness.sh）已由
+# CMake install 装到 /usr/lib/dsh-desktop/icon-brightness.sh 并 chmod +x。
+# post_install() 通过 subshell 调用它按本机真实 KDE users 的 colorscheme
+# 选普通色版——避免全部用户都 fallback 到 CMake 装的固定黑色版（暗色
+# look-and-feel 下看不见）。用 subshell 而非 source 是因为脚本是 bash 写的
+# 内部用 [[ ]] / local 等，Arch post_install 跑在 bash 上下文也安全。
+post_install() {
+    local brightness_lib="/usr/lib/dsh-desktop/icon-brightness.sh"
+    [[ -x "$brightness_lib" ]] || return 0
+    local brightness src dst
+    brightness="$("$brightness_lib")"
+    case "$brightness" in
+      dark)  src="/usr/share/icons/hicolor/scalable/apps/dsh-whale-white.svg" ;;
+      *)     src="/usr/share/icons/hicolor/scalable/apps/dsh-whale-black.svg" ;;
+    esac
+    dst="/usr/share/icons/hicolor/scalable/apps/dsh-whale.svg"
+    if [[ -r "$src" && -r "$dst" ]]; then
+        cp -f "$src" "$dst"
+        chmod 0644 "$dst"
+        echo "==> dsh-desktop: hicolor dsh-whale.svg 已根据本机 KDE colorscheme ($brightness) 覆盖为 $(basename "$src")"
+    fi
+    if command -v gtk-update-icon-cache >/dev/null 2>&1; then
+        gtk-update-icon-cache -f /usr/share/icons/hicolor 2>/dev/null || true
+    fi
+}

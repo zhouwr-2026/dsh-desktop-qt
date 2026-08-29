@@ -58,12 +58,37 @@ cp packaging/dsh-desktop.desktop %{buildroot}%{_sysconfdir}/xdg/autostart/
 %{_datadir}/icons/hicolor/scalable/apps/dsh-whale-black.svg
 %{_datadir}/icons/hicolor/scalable/apps/dsh-whale-white.svg
 %{_libdir}/dsh-desktop/dsh-theme-export
+%{_libdir}/dsh-desktop/icon-brightness.sh
 %config(noreplace) %{_unitdir}/dsh-theme-export.service
 %config(noreplace) %{_unitdir}/dsh-theme-export.path
 %config %{_sysconfdir}/xdg/autostart/dsh-desktop.desktop
 
 %post
 %systemd_post dsh-theme-export.path
+# 按本机真实 KDE users 的 colorscheme 覆盖 hicolor/scalable/apps/dsh-whale.svg
+# 普通色版——避免全部用户 fallback 到 CMake 装的固定黑色版（暗色 look-and-feel
+# 下看不见）。共享脚本 packaging/icon-brightness.sh 已由 CMake install 装到
+# /usr/lib/dsh-desktop/icon-brightness.sh 并 chmod +x，本脚本通过 subshell 调
+# 用它（不 source）——这样 %post 跑在 sh 上下文不会失败（脚本内部用 bash 写法
+# 但 subshell 隔离）。rpm 跑此 hook 时是 root 上下文，SUDO_USER 不存在——
+# 脚本内部遍历 /home/* 找 KDE 配置。
+brightness_lib=%{_libdir}/dsh-desktop/icon-brightness.sh
+if [ -x "$brightness_lib" ]; then
+    brightness="$("$brightness_lib")"
+    case "$brightness" in
+      dark)  src=%{_datadir}/icons/hicolor/scalable/apps/dsh-whale-white.svg ;;
+      *)     src=%{_datadir}/icons/hicolor/scalable/apps/dsh-whale-black.svg ;;
+    esac
+    dst=%{_datadir}/icons/hicolor/scalable/apps/dsh-whale.svg
+    if [ -r "$src" ] && [ -r "$dst" ]; then
+        cp -f "$src" "$dst"
+        chmod 0644 "$dst"
+        echo "dsh-desktop: hicolor dsh-whale.svg 已按本机 KDE colorscheme ($brightness) 覆盖为 $(basename "$src")"
+    fi
+    if command -v gtk-update-icon-cache >/dev/null 2>&1; then
+        gtk-update-icon-cache -f %{_datadir}/icons/hicolor 2>/dev/null || true
+    fi
+fi
 
 %preun
 %systemd_preun dsh-theme-export.path

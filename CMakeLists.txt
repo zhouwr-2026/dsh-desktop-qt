@@ -295,6 +295,12 @@ install(FILES assets/dsh-whale-white.svg
 install(PROGRAMS packaging/dsh-theme-export
     DESTINATION "${CMAKE_INSTALL_LIBDIR}/dsh-desktop"
 )
+# 共享给所有发行版包 post-install hook（PKGBUILD post_install / debian
+# postinst / rpm %post）的图标配色探测脚本；包装内源在 packaging/，装到
+# /usr/lib/dsh-desktop/ 让各 hook 在 root 上下文能 source 它。
+install(PROGRAMS packaging/icon-brightness.sh
+    DESTINATION "${CMAKE_INSTALL_LIBDIR}/dsh-desktop"
+)
 install(FILES "${CMAKE_CURRENT_SOURCE_DIR}/LICENSE"
     DESTINATION "${CMAKE_INSTALL_DATAROOTDIR}/licenses/dsh-desktop"
 )

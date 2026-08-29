@@ -4,4 +4,28 @@ if [ -d /run/systemd/system ]; then
     deb-systemd-invoke enable dsh-theme-export.path >/dev/null || true
     deb-systemd-invoke start dsh-theme-export.path >/dev/null || true
 fi
+# 按本机真实 KDE users 的 colorscheme 覆盖 hicolor/scalable/apps/dsh-whale.svg
+# 普通色版——避免全部用户 fallback 到 CMake 装的固定黑色版（暗色 look-and-feel
+# 下看不见）。共享脚本 packaging/icon-brightness.sh 已由 CMake install 装到
+# /usr/lib/dsh-desktop/icon-brightness.sh 并 chmod +x，本脚本通过 subshell 调
+# 用它（不 source）——这样 sh（dash）跑 postinst 不会失败（脚本内部用 bash
+# 写法但 subshell 隔离）。dpkg 跑此 hook 时是 root 上下文，SUDO_USER 不存在
+# ——脚本内部遍历 /home/* 找 KDE 配置。
+brightness_lib=/usr/lib/dsh-desktop/icon-brightness.sh
+if [ -x "$brightness_lib" ]; then
+    brightness="$("$brightness_lib")"
+    case "$brightness" in
+      dark)  src=/usr/share/icons/hicolor/scalable/apps/dsh-whale-white.svg ;;
+      *)     src=/usr/share/icons/hicolor/scalable/apps/dsh-whale-black.svg ;;
+    esac
+    dst=/usr/share/icons/hicolor/scalable/apps/dsh-whale.svg
+    if [ -r "$src" ] && [ -r "$dst" ]; then
+        cp -f "$src" "$dst"
+        chmod 0644 "$dst"
+        echo "dsh-desktop: hicolor dsh-whale.svg 已按本机 KDE colorscheme ($brightness) 覆盖为 $(basename "$src")"
+    fi
+    if command -v gtk-update-icon-cache >/dev/null 2>&1; then
+        gtk-update-icon-cache -f /usr/share/icons/hicolor 2>/dev/null || true
+    fi
+fi
 #DEBHELPER#
