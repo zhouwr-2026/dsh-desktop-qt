@@ -2,9 +2,9 @@
 
 DSH Desktop 是使用 C++17 与 Qt 6 开发的 DeepSeek Harness 原生桌面包装器。它通过 Qt WebEngine 嵌入官方 Web 界面，提供系统托盘、原生对话框、主题图标、更新与 systemd 服务管理，不依赖 Electron、Tauri 或 Python 运行时。
 
-> **Reference**: This project is based on the desktop wrapper concept from [anywhere-labs/deepseek-harness-desktop](https://github.com/anywhere-labs/deepseek-harness-desktop), reimplemented in native C++/Qt6 for Linux KDE Plasma 6 with zero Electron dependency.
+> **参考实现**：本项目基于 [anywhere-labs/deepseek-harness-desktop](https://github.com/anywhere-labs/deepseek-harness-desktop) 的桌面包装器概念，使用原生 C++/Qt6 为 Linux KDE Plasma 6 重新实现，零 Electron 依赖。
 
-## Features
+## 功能特性
 
 - 常驻系统托盘与原生 Qt 菜单。
 - 持久化 WebEngine 登录会话、缓存与 Cookie。
@@ -15,31 +15,31 @@ DSH Desktop 是使用 C++17 与 Qt 6 开发的 DeepSeek Harness 原生桌面包�
 - 只读发现并校验现有 `dsh-web.service`；没有有效服务时使用 supervised `dsh web` 子进程。
 - 后端健康检查、自动恢复提示和安全的安装/卸载助手。
 
-## Credits & Acknowledgments
+## 致谢
 
-### Upstream Projects
+### 上游项目
 
-- **[deepseek-ai/deepseek-harness](https://github.com/deepseek-ai/deepseek-harness)** — The official DeepSeek Harness backend and CLI tool that provides the web service we wrap. Licensed under Apache-2.0.
-- **[anywhere-labs/deepseek-harness-desktop](https://github.com/anywhere-labs/deepseek-harness-desktop)** — The reference Electron-based desktop wrapper for Windows/macOS. Our project reimplements the desktop experience natively for Linux using Qt 6.
+- **[deepseek-ai/deepseek-harness](https://github.com/deepseek-ai/deepseek-harness)** — 官方 DeepSeek Harness 后端和 CLI 工具，提供我们包装的 Web 服务。采用 Apache-2.0 许可。
+- **[anywhere-labs/deepseek-harness-desktop](https://github.com/anywhere-labs/deepseek-harness-desktop)** — 参考实现的 Electron 桌面包装器（Windows/macOS）。本项目在其概念基础上，使用 Qt 6 为 Linux 原生重实现。
 
-### Dependencies
+### 依赖组件
 
-- **[Qt 6](https://www.qt.io/)** — Cross-platform application framework. Licensed under GPL-3.0 / Commercial.
-- **[systemd](https://systemd.io/)** — System and service manager. Licensed under LGPL-2.1+.
-- **[polkit](https://www.freedesktop.org/wiki/Software/polkit/)** — Policy framework for managing system-wide privileges. Licensed under LGPL-2.1+.
-- **[libxcb](https://xcb.freedesktop.org/)** — C binding to the X11 protocol. Licensed under MIT.
+- **[Qt 6](https://www.qt.io/)** — 跨平台应用框架。采用 GPL-3.0 / Commercial 许可。
+- **[systemd](https://systemd.io/)** — 系统和服务管理器。采用 LGPL-2.1+ 许可。
+- **[polkit](https://www.freedesktop.org/wiki/Software/polkit/)** — 策略框架，用于管理系统级权限。采用 LGPL-2.1+ 许可。
+- **[libxcb](https://xcb.freedesktop.org/)** — X11 协议的 C 语言绑定。采用 MIT 许可。
 
-### Open Source Licenses
+### 开源许可说明
 
-This project is licensed under MIT License. See [LICENSE](LICENSE) for details.
+本项目采用 MIT 许可证，详见 [LICENSE](LICENSE)。
 
-The following third-party components are used:
-- Qt 6 components: LGPL-3.0 or Commercial
+第三方组件许可：
+- Qt 6 组件: LGPL-3.0 或 Commercial
 - systemd: LGPL-2.1+
 - polkit: LGPL-2.1+
 - libxcb: MIT
 
-See [docs/DEPENDENCIES.md](docs/DEPENDENCIES.md) for complete dependency tree.
+完整依赖树见 [docs/DEPENDENCIES.md](docs/DEPENDENCIES.md)。
 
 ---
 
