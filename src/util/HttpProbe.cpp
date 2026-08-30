@@ -2,30 +2,22 @@
 // @author zhouwr
 #include "HttpProbe.h"
 
-#include <QByteArray>
-#include <QProcess>
+#include "SyncHttp.h"
+
+#include <QUrl>
+
+#include <cassert>
 
 namespace dsh::util {
 
-namespace {
-constexpr int kProbeTimeoutMs = 1500;
-constexpr int kCurlMaxTimeSec = 1;
-}  // namespace
-
 bool httpProbe(const QString& url) {
-    QProcess curl;
-    curl.start(QStringLiteral("curl"),
-               {QStringLiteral("-s"), QStringLiteral("-o"), QStringLiteral("/dev/null"),
-                QStringLiteral("-w"), QStringLiteral("%{http_code}"),
-                QStringLiteral("--max-time"), QString::number(kCurlMaxTimeSec),
-                url + QStringLiteral("/")});
-    if (!curl.waitForFinished(kProbeTimeoutMs)) return false;
-    // 退出状态非 NormalExit（被信号杀掉等）也视为失败：与 SystemdBackend 原版一致。
-    if (curl.exitStatus() != QProcess::NormalExit) return false;
-    bool ok = false;
-    const int code =
-        QString::fromLocal8Bit(curl.readAllStandardOutput()).toInt(&ok);
-    return ok && code >= 200 && code < 500;
+    // 不变量：调用方应保证 URL 非空；空 URL 会导致 syncHttpGet 发起无效请求。
+    assert(!url.isEmpty());
+    // 基于 QNetworkAccessManager 的同步探测（无子进程开销，每次节省 ~1 MiB）。
+    // 语义：2xx/3xx/4xx = 可达，5xx/网络失败 = 不可达，超时 2s。
+    const SyncHttpResult result = syncHttpGet(QUrl(url + "/"), /*timeoutSeconds=*/2);
+    const int code = result.httpStatus;
+    return result.ok && code >= 200 && code < 500;
 }
 
 }  // namespace dsh::util

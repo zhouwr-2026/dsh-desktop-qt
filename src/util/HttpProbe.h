@@ -22,14 +22,13 @@
 
 namespace dsh::util {
 
-/// 对 ``url`` 做 HTTP 健康探测：
-///   * 派生 ``curl -s -o /dev/null -w '%{http_code}' --max-time 1 <url>/``；
-///   * 超时 1500ms 内未结束视为失败；
-///   * 退出状态非 ``QProcess::NormalExit`` 视为失败；
-///   * 解析 HTTP 状态码，200 ≤ code < 500 视为可达；其它（含 5xx、curl 自身
-///     报错、status 解析失败）视为不可达。
+/// 对 ``url`` 做 HTTP 健康探测（基于 QNetworkAccessManager，无子进程）。
+///   * 超时 2 秒；
+///   * 退出状态非正常（网络错误）视为失败；
+///   * 解析 HTTP 状态码，200 ≤ code < 500 视为可达；其它（含 5xx、连接失败）
+///     视为不可达。
 ///
-/// \param url 要探测的 URL（不含末尾斜杠；本函数会追加 ``/`` 与 curl 调用）。
+/// \param url 要探测的 URL（不含末尾斜杠与路径；本函数会追加 ``/``）。
 /// \return 可达返回 ``true``；否则 ``false``。
 bool httpProbe(const QString& url);
 

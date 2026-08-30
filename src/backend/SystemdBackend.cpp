@@ -20,6 +20,7 @@
 #include <QUrl>
 
 #include <array>
+#include <cassert>
 #include <unistd.h>
 
 namespace dsh::backend {
@@ -111,6 +112,7 @@ dsh::service::DetectedService SystemdBackend::detect() {
 }
 
 bool SystemdBackend::isRunning() const {
+    assert(!url_.isEmpty());
     return dsh::util::httpProbe(url_);
 }
 
@@ -128,8 +130,6 @@ Status SystemdBackend::status() {
         const auto probe = dsh::util::runSyncProcess(
             QStringLiteral("systemctl"), args,
             /*timeoutMs=*/3000, /*killGraceMs=*/500);
-        // 即使超时也被 kill：避免子进程泄漏（旧版直接 waitForFinished 不 kill
-        // 是 is-active 探测的真实资源泄漏 bug）。
         s.detail = QStringLiteral("systemd 单元 %1: %2")
                        .arg(unitName_,
                             QString::fromLocal8Bit(probe.stdoutBytes).trimmed());

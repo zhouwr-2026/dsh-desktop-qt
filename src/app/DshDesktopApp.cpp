@@ -37,6 +37,7 @@
 #include <QUrl>
 
 #include <cstdio>
+#include <cassert>
 #include <iostream>
 
 #include "util/Notify.h"
@@ -365,6 +366,7 @@ int DshDesktopApp::run() {
     // 自检模式：输出报告后立即 _exit，避免 QtWebEngine 在 offscreen
     // 模式下退出时偶发的 SIGSEGV 影响冒烟脚本的退出码解析。
     if (args_.selfTest) {
+        assert(window_ && tray_ && backend_);
         QTimer::singleShot(800, this, [this]() {
             QJsonObject report;
             report.insert(QStringLiteral("tray_visible"), tray_ && tray_->isVisible());
@@ -1005,11 +1007,17 @@ void DshDesktopApp::onClearDownloads() {
                                  tr("下载目录已为空。\n%1").arg(dir));
         return;
     }
+    // 预先计算总大小，用于确认对话框的文案提示。
+    qint64 totalSize = 0;
+    for (const auto& name : files) {
+        QFileInfo fi(d.absoluteFilePath(name));
+        totalSize += fi.size();
+    }
     QMessageBox box;
     box.setIcon(QMessageBox::Question);
     box.setWindowTitle(tr("确认清空下载缓存"));
     box.setText(tr("即将删除 %1 个会话日志文件（约 %2 KB），无法恢复。\n\n"
-                    "目录：%3").arg(files.size()).arg(0).arg(dir));
+                    "目录：%3").arg(files.size()).arg(totalSize / 1024).arg(dir));
     box.setStandardButtons(QMessageBox::Yes | QMessageBox::Cancel);
     box.setDefaultButton(QMessageBox::Cancel);
     if (box.exec() != QMessageBox::Yes) return;

@@ -24,29 +24,38 @@
 // 就会 strip 整个 qrc_icons.cpp，资源也就没了。显式 extern 一下即可。
 extern int qInitResources_icons();
 
-int main(int argc, char* argv[]) {
-    // 立即注册嵌入资源（必须在构造任何 QIcon 之前）。
-    qInitResources_icons();
+namespace dsh {
 
-    // 把 IME 集成所需的环境变量补齐——尤其是 XMODIFIERS / QT_IM_MODULE /
-    // GTK_IM_MODULE / SDL_IM_MODULE。QtWebEngine 内部 Chromium 进程靠
-    // XMODIFIERS=@im=fcitx 跟 X server 上的输入法通讯；如果 dsh-desktop 是
-    // 由 systemd / dbus-run-session / 自启动拉起的，session 环境可能没带
-    // 这些变量，结果就是嵌入式 webview 里的输入框无法切换中英文。Qt 自身
-    // 输入控件靠 QT_IM_MODULE。两者必须都在，且在 QApplication 构造前
-    // 设好（之后 Chromium 子进程会继承）。
+/// 在 QApplication 构造前补齐 IME 等关键环境变量。
+///
+/// QtWebEngine 内部 Chromium 进程靠 XMODIFIERS=@im=fcitx 跟 X server 上的
+/// 输入法通讯；如果 dsh-desktop 是由 systemd / dbus-run-session / 自启动拉起
+/// 的，session 环境可能没带这些变量，结果就是嵌入式 webview 里的输入框无法
+/// 切换中英文。Qt 自身输入控件靠 QT_IM_MODULE。两者必须都在，且在
+/// QApplication 构造前设好（之后 Chromium 子进程会继承）。
+///
+/// 用户的桌面常用 fcitx5；fcitx5 同时响应 @im=fcitx（XIM 协议）。
+/// 如果用户用 ibus，fcitx 也能正确指向实际 agent（fcitx5 兼容 ibus 客户端）。
+/// 设置成 fcitx 不影响 ibus 用户。
+void configureEnvironment() {
     auto ensureEnvVar = [](const char* name, const char* defaultValue) {
         if (qEnvironmentVariableIsEmpty(name)) {
             qputenv(name, defaultValue);
         }
     };
-    // 用户的桌面常用 fcitx5；fcitx5 同时响应 @im=fcitx（XIM 协议）。
-    // 如果用户用 ibus，fcitx 也能正确指向实际 agent（fcitx5 兼容 ibus
-    // 客户端）。设置成 fcitx 不影响 ibus 用户。
     ensureEnvVar("XMODIFIERS", "@im=fcitx");
     ensureEnvVar("QT_IM_MODULE", "fcitx");
     ensureEnvVar("GTK_IM_MODULE", "fcitx");
     ensureEnvVar("SDL_IM_MODULE", "fcitx");
+}
+
+}  // namespace dsh
+
+int main(int argc, char* argv[]) {
+    // 立即注册嵌入资源（必须在构造任何 QIcon 之前）。
+    qInitResources_icons();
+
+    dsh::configureEnvironment();
 
     QCoreApplication::setOrganizationName(QStringLiteral("anywhere-labs"));
     QCoreApplication::setApplicationName(QStringLiteral("dsh-desktop"));
@@ -57,7 +66,6 @@ int main(int argc, char* argv[]) {
     // GPU 线程会因 GLOzone 初始化失败而 SIGABRT。实体机保留硬件加速。
     dsh::platform::configureRendering();
 
-    // 无 GUI 的诊断模式必须能够在没有 DISPLAY/WAYLAND_DISPLAY 的机器上运行。
     // --self-test 仍需构造 QApplication，但在无显式平台配置时强制使用 offscreen。
     bool selfTestRequested = false;
     bool guiRequested = true;

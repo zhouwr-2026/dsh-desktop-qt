@@ -10,6 +10,8 @@
 #include <QStandardPaths>
 #include <QUrl>
 
+#include <cassert>
+
 #include <signal.h>
 #include <unistd.h>
 
@@ -43,6 +45,7 @@ SupervisedBackend::~SupervisedBackend() {
 }
 
 bool SupervisedBackend::isRunning() const {
+    assert(!url_.isEmpty());
     return dsh::util::httpProbe(url_);
 }
 
