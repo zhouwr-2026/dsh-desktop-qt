@@ -44,7 +44,7 @@ AboutDialog::AboutDialog(QWidget* parent) : QDialog(parent) {
         "</p>"
         "<hr/>"
         "<p><b>技术栈</b><br/>"
-        "• C++17 + Qt 6（与 KDE Plasma 6 同源）<br/>"
+        "• C++23 + Qt 6（与 KDE Plasma 6 同源）<br/>"
         "• QWebEngine 渲染官方 DSH Web 全部 UI 与插件<br/>"
         "• QSystemTrayIcon + KDE StatusNotifierItem 协议<br/>"
         "• org.freedesktop.Notifications D-Bus 通知<br/>"

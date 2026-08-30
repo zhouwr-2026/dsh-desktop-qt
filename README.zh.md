@@ -13,7 +13,7 @@
 
 | 需求 | 实现 |
 | --- | --- |
-| 1. 原生 Linux 栈 | C++17 + Qt6 6.5+ + KDE Plasma 6 的 `StatusNotifierItem` 协议 + `org.freedesktop.*` D-Bus；不引入 Electron / Tauri。 |
+| 1. 原生 Linux 栈 | C++23 + Qt6 6.5+ + KDE Plasma 6 的 `StatusNotifierItem` 协议 + `org.freedesktop.*` D-Bus；不引入 Electron / Tauri。 |
 | 2. 常驻托盘 + 菜单 | `QSystemTrayIcon` + `QMenu`；菜单含 `显示桌面 / 隐藏桌面 / 检查更新 / 更新到最新版（仅在发现新版本时显示） / 查看日志 / 清空下载缓存 / 关于 / 重启 / 退出`。 |
 | 3. 退出 / 重启原生对话框 + 后台服务勾选 | 独立的 `ExitDialog` 与 `RestartDialog` + `QCheckBox`；检测到活跃任务时显式高亮提示。后端运行中：勾选才调 `systemctl stop|restart dsh-web.service`（polkit 弹框）；后端未运行时勾选框锁定为"同时启动 DSH 后台服务"，未安装则弹原生确认后自动 `pkexec npm i -g @deepseek-ai/dsh`。 |
 | 4. 黑/白鲸鱼 SVG 主题自适应 | 图标为**纯色**黑/白小鲸鱼 SVG（单一 path，fill 分别为 `#000000` / `#FFFFFF`），`assets/dsh-whale-{black,white}.svg` 为唯一 canonical 来源，经 `assets/icons.qrc` 内嵌到二进制，**全链路仅 SVG、无任何 PNG 位图变体**；`ThemeWatcher` 优先读 KDE 配置（`LookAndFeelPackage` / `ColorScheme`，含跨用户会话导出的主题标记），辅以 Qt `QStyleHints.colorScheme()`、`org.freedesktop.portal.Settings` 与 QPalette 兜底；托盘 / 窗口 / 任务栏 / 关于 对话框统一跟随；远程 xrdp 场景可用 `--theme dark` 强制暗色。 |

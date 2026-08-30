@@ -37,7 +37,7 @@ src/
 
 ## 3. 编码规范
 
-- C++17，配合 `clang-format`（仓库根建议提交 `.clang-format`）。
+- C++23，配合 `clang-format`（仓库根建议提交 `.clang-format`）。
 - 头文件用 `#pragma once`；类成员函数顺序：public → protected → private。
 - 私有方法优先使用匿名命名空间而非 `private static`。
 - 公开 API 命名：驼峰；强类型枚举（`enum class`）。

@@ -45,7 +45,7 @@
 
 ## 已知威胁模型
 
-DSH Desktop 是一个 Qt 6 / C++17 桌面包装器,处理来自 npm 注册表与 Gitee API 的内容,并通过 D-Bus / systemd 与 Linux 桌面交互。当前明确的威胁模型边界:
+DSH Desktop 是一个 Qt 6 / C++23 桌面包装器,处理来自 npm 注册表与 Gitee API 的内容,并通过 D-Bus / systemd 与 Linux 桌面交互。当前明确的威胁模型边界:
 
 - **不信任的网络输入**:npm 注册表响应、Gitee release JSON、桌面端用户键入 URL
 - **半信任的本地输入**:systemd 单元文件(由包安装器写入)、`~/.config/kdeglobals`

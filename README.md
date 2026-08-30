@@ -1,6 +1,6 @@
 # DSH Desktop — DeepSeek Harness 原生 Linux 桌面端
 
-DSH Desktop 是使用 C++17 与 Qt 6 开发的 DeepSeek Harness 原生桌面包装器。它通过 Qt WebEngine 嵌入官方 Web 界面，提供系统托盘、原生对话框、主题图标、更新与 systemd 服务管理，不依赖 Electron、Tauri 或 Python 运行时。
+DSH Desktop 是使用 C++23 与 Qt 6 开发的 DeepSeek Harness 原生桌面包装器。它通过 Qt WebEngine 嵌入官方 Web 界面，提供系统托盘、原生对话框、主题图标、更新与 systemd 服务管理，不依赖 Electron、Tauri 或 Python 运行时。
 
 > **参考实现**：本项目基于 [anywhere-labs/deepseek-harness-desktop](https://github.com/anywhere-labs/deepseek-harness-desktop) 的桌面包装器概念，使用原生 C++/Qt6 为 Linux KDE Plasma 6 重新实现，零 Electron 依赖。
 
